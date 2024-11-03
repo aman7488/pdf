@@ -2,3 +2,35 @@ just a random text file for my use....
 
 
 
+package com.sc.generic.iogateway.messaging;
+
+import org.springframework.stereotype.Service;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+@Service
+public class KafkaProcessorService {
+
+    private final ConcurrentHashMap<String, String> messageCache = new ConcurrentHashMap<>();   // for caching
+    private final AtomicBoolean isListenerActive = new AtomicBoolean(true);     // for auto-healing
+
+    public  void processMessage(String message, String messageId) {
+        if (!isListenerActive.get()) {
+            System.out.println("Listener is paused because of errors!");
+            return;
+        }
+
+        messageCache.putIfAbsent(messageId, message);
+
+        try {
+            System.out.println("Processing Message: " + message);
+            // processing layer to be implemented
+            messageCache.remove(messageId);
+        } catch (Exception e) {
+            System.out.println("Error occurred while processing message! It's cached for now.");
+            // example can be tested for halting the listener
+            isListenerActive.set(false);
+        }
+    }
+}
