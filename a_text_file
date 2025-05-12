@@ -4,27 +4,15 @@ just a random text file for my use....
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Typography,
-  Grid,
-  TextField,
   Card,
   CardContent,
   CircularProgress,
-  Popover,
   Box,
   Button,
-  FormControl,
-  InputLabel,
-  Select,
-  Checkbox,
-  ListItemText,
-  OutlinedInput,
-  MenuItem,
-  Divider
 } from "@mui/material";
 import { loadExcelData } from "./services/ExcelDataService";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import EntityBarChart from "../charts/EntityBarChart";
 import dayjs from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
@@ -33,6 +21,7 @@ import VolumeChart from "../charts/VolumeChart";
 import ClientVolumeGrid from "../charts/ClientVolumeGrid";
 import DownloadIcon from "@mui/icons-material/FileDownload";
 import * as XLSX from "xlsx";
+import FilterPanel from "./services/FilterPanel";
 
 dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
@@ -55,17 +44,6 @@ const dropdownFields = [
   "Client Country",
 ];
 
-const ITEM_HEIGHT = 48;
-const ITEM_PADDING_TOP = 8;
-const MenuProps = {
-  PaperProps: {
-    style: {
-      maxHeight: ITEM_HEIGHT * 4.5 + ITEM_PADDING_TOP,
-      width: 250,
-    },
-  },
-};
-
 function AppContainer() {
   const [originalDropdownOptions, setOriginalDropdownOptions] = useState({});
   const [dynamicDropdownOptions, setDynamicDropdownOptions] = useState({});
@@ -74,7 +52,6 @@ function AppContainer() {
   const [error, setError] = useState(null);
   const [filterValues, setFilterValues] = useState({});
   const [valueDateRange, setValueDateRange] = useState({ start: null, end: null });
-  const [anchorEl, setAnchorEl] = useState(null);
 
   useEffect(() => {
     const initialFilterValues = {};
@@ -279,106 +256,14 @@ function AppContainer() {
           </Button>
         </Box>
 
-        <Card elevation={3} sx={{ p: 2 }}>
-          <CardContent sx={{ padding: "16px !important" }}>
-            <Grid container spacing={2}>
-              {dropdownFields.map((field, index) => {
-                if (field === "Value Date") {
-                  return (
-                    <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
-                      <TextField
-                        label="Value Date"
-                        value={
-                          valueDateRange.start && valueDateRange.end
-                            ? `${dayjs(valueDateRange.start).format("YYYY-MM-DD")} to ${dayjs(valueDateRange.end).format("YYYY-MM-DD")}`
-                            : ""
-                        }
-                        onClick={(e) => setAnchorEl(e.currentTarget)}
-                        InputProps={{ readOnly: true }}
-                        fullWidth
-                        variant="outlined"
-                        size="small"
-                        sx={{ maxWidth: "200px", minWidth: "150px" }}
-                      />
-                      <Popover
-                        open={Boolean(anchorEl)}
-                        anchorEl={anchorEl}
-                        onClose={() => setAnchorEl(null)}
-                        anchorOrigin={{
-                          vertical: 'bottom',
-                          horizontal: 'left',
-                        }}
-                      >
-                        <Box p={2} display="flex" gap={2}>
-                          <DatePicker
-                            label="Start Date"
-                            value={valueDateRange.start}
-                            onChange={(newValue) => {
-                              const updated = { ...valueDateRange, start: newValue };
-                              setValueDateRange(updated);
-                              handleFilterChange("Value Date", updated);
-                            }}
-                          />
-                          <DatePicker
-                            label="End Date"
-                            value={valueDateRange.end}
-                            onChange={(newValue) => {
-                              const updated = { ...valueDateRange, end: newValue };
-                              setValueDateRange(updated);
-                              handleFilterChange("Value Date", updated);
-                            }}
-                          />
-                        </Box>
-                      </Popover>
-                    </Grid>
-                  );
-                }
-
-                return (
-                  <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
-                    <FormControl fullWidth variant="outlined" size="small" sx={{ minWidth: "200px" }}>
-                      <InputLabel id={`${field}-label`}>{field}</InputLabel>
-                      <Select
-                        labelId={`${field}-label`}
-                        id={`${field}-select`}
-                        multiple
-                        value={filterValues[field] || []}
-                        onChange={(e) => handleFilterChange(field, e.target.value)}
-                        input={<OutlinedInput label={field} />}
-                        renderValue={(selected) => {
-                          if (selected.length === 0) {
-                            return 'All';
-                          }
-                          if (selected.length > 2) {
-                            return `${selected.length} selected`;
-                          }
-                          return selected.join(', ');
-                        }}
-                        MenuProps={MenuProps}
-                      >
-                        <MenuItem value="__all__" sx={{ fontWeight: 'bold' }}>
-                          <Checkbox
-                            checked={dynamicDropdownOptions[field] && filterValues[field]?.length === dynamicDropdownOptions[field].length}
-                            indeterminate={filterValues[field]?.length > 0 &&
-                              filterValues[field]?.length < dynamicDropdownOptions[field]?.length}
-                          />
-                          <ListItemText primary="(All)" />
-                        </MenuItem>
-                        <Divider />
-                        {dynamicDropdownOptions[field]?.map((option) => (
-                          <MenuItem key={option.value} value={option.value}>
-                            <Checkbox checked={filterValues[field]?.indexOf(option.value) > -1} />
-                            <ListItemText primary={option.label} />
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                );
-              })}
-            </Grid>
-          </CardContent>
-        </Card>
+        <FilterPanel
+          dropdownFields={dropdownFields}
+          filterValues={filterValues}
+          dynamicDropdownOptions={dynamicDropdownOptions}
+          valueDateRange={valueDateRange}
+          setValueDateRange={setValueDateRange}
+          handleFilterChange={handleFilterChange}
+        />
 
         <Card elevation={3} sx={{ mt: 4, p: 2 }}>
           <CardContent>
@@ -403,3 +288,147 @@ function AppContainer() {
 }
 
 export default AppContainer;
+
+
+
+
+import React, { useState } from "react";
+import {
+  Grid,
+  TextField,
+  Popover,
+  FormControl,
+  InputLabel,
+  Select,
+  Checkbox,
+  ListItemText,
+  OutlinedInput,
+  MenuItem,
+  Divider,
+  Card,
+  CardContent,
+  Box
+} from "@mui/material";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import dayjs from "dayjs";
+
+const ITEM_HEIGHT = 48;
+const ITEM_PADDING_TOP = 8;
+const MenuProps = {
+  PaperProps: {
+    style: {
+      maxHeight: ITEM_HEIGHT * 4.5 + ITEM_PADDING_TOP,
+      width: 250,
+    },
+  },
+};
+
+const FilterPanel = ({ dropdownFields, filterValues, dynamicDropdownOptions, valueDateRange, setValueDateRange, handleFilterChange }) => {
+  const [anchorEl, setAnchorEl] = useState(null);
+
+  return (
+    <Card elevation={3} sx={{ p: 2 }}>
+      <CardContent sx={{ padding: "16px !important" }}>
+        <Grid container spacing={2}>
+          {dropdownFields.map((field, index) => {
+            if (field === "Value Date") {
+              return (
+                <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
+                  <TextField
+                    label="Value Date"
+                    value={
+                      valueDateRange.start && valueDateRange.end
+                        ? `${dayjs(valueDateRange.start).format("YYYY-MM-DD")} to ${dayjs(valueDateRange.end).format("YYYY-MM-DD")}`
+                        : ""
+                    }
+                    onClick={(e) => setAnchorEl(e.currentTarget)}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                    sx={{ maxWidth: "200px", minWidth: "150px" }}
+                  />
+                  <Popover
+                    open={Boolean(anchorEl)}
+                    anchorEl={anchorEl}
+                    onClose={() => setAnchorEl(null)}
+                    anchorOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'left',
+                    }}
+                  >
+                    <Box p={2} display="flex" gap={2}>
+                      <DatePicker
+                        label="Start Date"
+                        value={valueDateRange.start}
+                        onChange={(newValue) => {
+                          const updated = { ...valueDateRange, start: newValue };
+                          setValueDateRange(updated);
+                          handleFilterChange("Value Date", updated);
+                        }}
+                      />
+                      <DatePicker
+                        label="End Date"
+                        value={valueDateRange.end}
+                        onChange={(newValue) => {
+                          const updated = { ...valueDateRange, end: newValue };
+                          setValueDateRange(updated);
+                          handleFilterChange("Value Date", updated);
+                        }}
+                      />
+                    </Box>
+                  </Popover>
+                </Grid>
+              );
+            }
+
+            return (
+              <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
+                <FormControl fullWidth variant="outlined" size="small" sx={{ minWidth: "200px" }}>
+                  <InputLabel id={`${field}-label`}>{field}</InputLabel>
+                  <Select
+                    labelId={`${field}-label`}
+                    id={`${field}-select`}
+                    multiple
+                    value={filterValues[field] || []}
+                    onChange={(e) => handleFilterChange(field, e.target.value)}
+                    input={<OutlinedInput label={field} />}
+                    renderValue={(selected) => {
+                      if (selected.length === 0) {
+                        return 'All';
+                      }
+                      if (selected.length > 2) {
+                        return `${selected.length} selected`;
+                      }
+                      return selected.join(', ');
+                    }}
+                    MenuProps={MenuProps}
+                  >
+                    <MenuItem value="__all__" sx={{ fontWeight: 'bold' }}>
+                      <Checkbox
+                        checked={dynamicDropdownOptions[field] && filterValues[field]?.length === dynamicDropdownOptions[field].length}
+                        indeterminate={filterValues[field]?.length > 0 &&
+                          filterValues[field]?.length < dynamicDropdownOptions[field]?.length}
+                      />
+                      <ListItemText primary="(All)" />
+                    </MenuItem>
+                    <Divider />
+                    {dynamicDropdownOptions[field]?.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        <Checkbox checked={filterValues[field]?.indexOf(option.value) > -1} />
+                        <ListItemText primary={option.label} />
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            );
+          })}
+        </Grid>
+      </CardContent>
+    </Card>
+  )
+}
+
+export default FilterPanel;
+
