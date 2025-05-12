@@ -1,5 +1,307 @@
-Uncaught TypeError: (0 , _mui_material__WEBPACK_IMPORTED_MODULE_3__.default) is not a function or its return value is not iterable
-    at getSortedOptions (FilterPanel.js:45:1)
-    at FilterPanel.js:152:1
-    at Array.map (<anonymous>)
-    at FilterPanel (FilterPanel.js:54:1)
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  Typography,
+  Card,
+  CardContent,
+  CircularProgress,
+  Box,
+  Button,
+} from "@mui/material";
+import { loadExcelData } from "./services/ExcelDataService";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import EntityBarChart from "../charts/EntityBarChart";
+import dayjs from "dayjs";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
+import VolumeChart from "../charts/VolumeChart";
+import ClientVolumeGrid from "../charts/ClientVolumeGrid";
+import DownloadIcon from "@mui/icons-material/FileDownload";
+import * as XLSX from "xlsx";
+import FilterPanel from "./services/FilterPanel";
+
+dayjs.extend(isSameOrAfter);
+dayjs.extend(isSameOrBefore);
+
+const dropdownFields = [
+  "Value Date",
+  "Parent ID",
+  "Client Segment",
+  "Group ID",
+  "SETTL_METH",
+  "Transaction Date",
+  "P_SETTL_MEANS",
+  "R_SETTL_MEANS",
+  "Entity",
+  "Client Label",
+  "Client Long Name",
+  "Client FMID",
+  "SCI LEID",
+  "Client Tier",
+  "Client Country",
+];
+
+function AppContainer() {
+  const [originalDropdownOptions, setOriginalDropdownOptions] = useState({});
+  const [dynamicDropdownOptions, setDynamicDropdownOptions] = useState({});
+  const [rawData, setRawData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filterValues, setFilterValues] = useState({});
+  const [valueDateRange, setValueDateRange] = useState({ start: null, end: null });
+
+  useEffect(() => {
+    const initialFilterValues = {};
+    dropdownFields.forEach(field => {
+      if (field === "Value Date") {
+        initialFilterValues[field] = { start: null, end: null };
+      } else {
+        initialFilterValues[field] = [];
+      }
+    });
+    setFilterValues(initialFilterValues);
+
+    const fetchData = async () => {
+      try {
+        const filePath = "/data/dummy_dashboard_data.xlsx";
+        const { options, jsonData } = await loadExcelData(filePath, dropdownFields);
+        setOriginalDropdownOptions(options);
+        setDynamicDropdownOptions(options);
+        setRawData(jsonData);
+
+        const populatedFilterValues = {};
+        dropdownFields.forEach(field => {
+          if (field === "Value Date") {
+            populatedFilterValues[field] = { start: null, end: null };
+          } else {
+            // populatedFilterValues[field] = [];
+            populatedFilterValues[field] = options[field]?.map(option => option.value) || [];
+          }
+        });
+        setFilterValues(populatedFilterValues);
+        setLoading(false);
+      } catch (err) {
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const getFilteredData = (data, filters, valueRange) => {
+    return data.filter(row => {
+      const valueDate = row["Value Date"];
+      if (valueDate) {
+        const rowDate = dayjs(valueDate);
+        const start = valueRange.start;
+        const end = valueRange.end;
+
+        if ((start && !rowDate.isSameOrAfter(dayjs(start), 'day')) ||
+          (end && !rowDate.isSameOrBefore(dayjs(end), 'day'))) {
+          return false;
+        }
+      }
+
+      for (const field of dropdownFields) {
+        if (field === "Value Date") continue;
+
+        if (!filters[field] || filters[field].length === 0) {
+          return false;
+        }
+
+        if (filters[field] && filters[field].length > 0) {
+          const rowValue = row[field];
+
+          if ((rowValue === null || rowValue === undefined || rowValue === "") &&
+            filters[field].includes("null")) {
+            continue;
+          }
+
+          if (rowValue === null || rowValue === undefined || rowValue === "") {
+            return false;
+          }
+
+          if (!filters[field].includes(rowValue.toString())) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+  };
+
+  // Use memoized filtered data to avoid recalculating on every render
+  const filteredData = useMemo(() => {
+    return getFilteredData(rawData, filterValues, valueDateRange);
+  }, [rawData, filterValues, valueDateRange]);
+
+  // Update dynamic dropdown options based on currently filtered data
+  useEffect(() => {
+    if (!loading && originalDropdownOptions && Object.keys(originalDropdownOptions).length > 0) {
+      const updatedOptions = {};
+
+      dropdownFields.forEach(field => {
+        if (field === "Value Date") {
+          updatedOptions[field] = originalDropdownOptions[field];
+          return;
+        }
+
+        const tempFilters = { ...filterValues };
+        // delete tempFilters[field];
+        tempFilters[field] = originalDropdownOptions[field]?.map(opt => opt.value) || [];
+
+        const relevantData = getFilteredData(rawData, tempFilters, valueDateRange);
+
+        const uniqueValues = new Set();
+        relevantData.forEach(row => {
+          const value = row[field];
+          if (value !== null && value !== undefined && value !== "") {
+            uniqueValues.add(value.toString());
+          }
+        });
+
+        const fieldOptions = Array.from(uniqueValues).map(value => ({
+          value: value,
+          label: value
+        }));
+
+        const hasNullOption = originalDropdownOptions[field]?.some(opt => opt.value === "null");
+        if (hasNullOption) {
+          fieldOptions.push({ value: "null", label: "(NULL)" });
+        }
+
+        updatedOptions[field] = fieldOptions;
+      });
+
+      setDynamicDropdownOptions(updatedOptions);
+    }
+  }, [filterValues, valueDateRange, rawData, originalDropdownOptions, loading]);
+
+  const handleFilterChange = (field, value) => {
+    if (field === "Value Date") {
+      setFilterValues(prev => ({
+        ...prev,
+        [field]: value
+      }));
+      return;
+    }
+
+
+    const allValues = dynamicDropdownOptions[field]?.map(option => option.value) || [];
+
+    if (value.includes("__all__")) {
+      const allSelected = filterValues[field]?.length === allValues.length;
+      setFilterValues(prev => ({
+        ...prev,
+        [field]: allSelected ? [] : allValues
+      }));
+    }
+    else {
+      const selected = value.filter(v => allValues.includes(v));
+      const isAllSelected = selected.length === allValues.length;
+      setFilterValues(prev => ({
+        ...prev,
+        [field]: isAllSelected ? allValues : selected
+      }));
+    }
+
+
+    // if (value.includes("__all__")) {
+    //   const allValues = dynamicDropdownOptions[field]?.map(option => option.value) || [];
+
+    //   if (filterValues[field]?.length > 0) {
+    //     setFilterValues(prev => ({
+    //       ...prev,
+    //       [field]: []
+    //     }));
+    //   }
+    //   else {
+    //     setFilterValues(prev => ({
+    //       ...prev,
+    //       [field]: allValues
+    //     }));
+    //   }
+    // }
+    // else {
+    //   setFilterValues(prev => ({
+    //     ...prev,
+    //     [field]: value
+    //   }));
+    // }
+  };
+
+  const handleDownload = () => {
+    const worksheet = XLSX.utils.json_to_sheet(filteredData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+    XLSX.writeFile(workbook, "DVP_Trade_Volumes.xlsx");
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+        <CircularProgress size={30} />
+        <Typography sx={{ ml: 2 }}>Loading data...</Typography>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <Typography color="error">{error}</Typography>;
+  }
+
+  return (
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+          <Typography
+            variant="h4"
+            sx={{ mb: 4, ml: 2, fontWeight: "bold", color: "#1976d2", textAlign: "center" }}
+          >
+            Delivery Versus Payment (DVP) Trade Volumes
+          </Typography>
+
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleDownload}
+            sx={{ minWidth: 0, padding: 1 }}
+            title="Download filtered data"
+          >
+            <DownloadIcon />
+          </Button>
+        </Box>
+
+        <FilterPanel
+          dropdownFields={dropdownFields}
+          filterValues={filterValues}
+          dynamicDropdownOptions={dynamicDropdownOptions}
+          valueDateRange={valueDateRange}
+          setValueDateRange={setValueDateRange}
+          handleFilterChange={handleFilterChange}
+        />
+
+        <Card elevation={3} sx={{ mt: 4, p: 2 }}>
+          <CardContent>
+            <EntityBarChart data={filteredData} />
+          </CardContent>
+        </Card>
+
+        <Card elevation={3} sx={{ mt: 4, p: 2 }}>
+          <CardContent>
+            <VolumeChart data={filteredData} />
+          </CardContent>
+        </Card>
+
+        <Card elevation={3} sx={{ mt: 4, p: 2 }}>
+          <CardContent>
+            <ClientVolumeGrid data={filteredData} />
+          </CardContent>
+        </Card>
+      </>
+    </LocalizationProvider>
+  );
+}
+
+export default AppContainer;
