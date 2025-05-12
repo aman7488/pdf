@@ -1,48 +1,5 @@
-const handleFilterChange = (field, value) => {
-    if (field === "Value Date") {
-      setFilterValues(prev => ({
-        ...prev,
-        [field]: value
-      }));
-      return;
-    }
-
-    if (value.includes("__all__")) {
-      const allValues = dynamicDropdownOptions[field]?.map(option => option.value) || [];
-
-      if (filterValues[field]?.length > 0) {
-        setFilterValues(prev => ({
-          ...prev,
-          [field]: []
-        }));
-      }
-      else {
-        setFilterValues(prev => ({
-          ...prev,
-          [field]: allValues
-        }));
-      }
-    }
-    else {
-      setFilterValues(prev => ({
-        ...prev,
-        [field]: value
-      }));
-    }
-  };
-
-
-
-
-
-
-renderValue={(selected) => {
-                      const totalOptions = dynamicDropdownOptions[field]?.length || 0;
-                      if (selected.length === 0 || selected.length === totalOptions) {
-                        return 'ALL';
-                      }
-                      if (selected.length > 2) {
-                        return `${selected.length} selected`;
-                      }
-                      return selected.join(', ');
-                    }}
+Uncaught TypeError: (0 , _mui_material__WEBPACK_IMPORTED_MODULE_3__.default) is not a function or its return value is not iterable
+    at getSortedOptions (FilterPanel.js:45:1)
+    at FilterPanel.js:152:1
+    at Array.map (<anonymous>)
+    at FilterPanel (FilterPanel.js:54:1)
