@@ -1,37 +1,48 @@
-Download the React DevTools for a better development experience: https://react.dev/link/react-devtools
-deleteLegacyGridProps.js:37  MUI Grid: The `item` prop has been removed and is no longer necessary. You can safely remove it.
+const handleFilterChange = (field, value) => {
+    if (field === "Value Date") {
+      setFilterValues(prev => ({
+        ...prev,
+        [field]: value
+      }));
+      return;
+    }
 
-(anonymous) @ deleteLegacyGridProps.js:37
-deleteLegacyGridProps.js:37  MUI Grid: The `xs` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+    if (value.includes("__all__")) {
+      const allValues = dynamicDropdownOptions[field]?.map(option => option.value) || [];
 
-(anonymous) @ deleteLegacyGridProps.js:37
-deleteLegacyGridProps.js:37  MUI Grid: The `sm` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
+      if (filterValues[field]?.length > 0) {
+        setFilterValues(prev => ({
+          ...prev,
+          [field]: []
+        }));
+      }
+      else {
+        setFilterValues(prev => ({
+          ...prev,
+          [field]: allValues
+        }));
+      }
+    }
+    else {
+      setFilterValues(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+  };
 
-(anonymous) @ deleteLegacyGridProps.js:37
-deleteLegacyGridProps.js:37  MUI Grid: The `md` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
 
-(anonymous) @ deleteLegacyGridProps.js:37
-deleteLegacyGridProps.js:37  MUI Grid: The `lg` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
 
-(anonymous) @ deleteLegacyGridProps.js:37
-highcharts.js:2  Highcharts warning: Consider including the "accessibility.js" module to make your chart more usable for people with disabilities. Set the "accessibility.enabled" option to false to remove this warning. See https://www.highcharts.com/docs/accessibility/accessibility-module.
-(anonymous) @ highcharts.js:2
-react-dom-client.development.js:3864  Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn't have a dependency array, or one of the dependencies changes on every render.
-getRootForUpdatedFiber @ react-dom-client.development.js:3864
-react-dom-client.development.js:3856  Uncaught Error: Maximum update depth exceeded. This can happen when a component repeatedly calls setState inside componentWillUpdate or componentDidUpdate. React limits the number of nested updates to prevent infinite loops.
-    at getRootForUpdatedFiber (react-dom-client.development.js:3856:1)
-    at enqueueConcurrentHookUpdate (react-dom-client.development.js:3820:1)
-    at dispatchSetStateInternal (react-dom-client.development.js:6966:1)
-    at dispatchSetState (react-dom-client.development.js:6927:1)
-    at FormControl.js:186:1
-    at InputBase.js:335:1
-    at InputBase.js:340:1
-    at react-stack-bottom-frame (react-dom-client.development.js:23949:1)
-    at runWithFiberInDEV (react-dom-client.development.js:1518:1)
-    at commitHookEffectListMount (react-dom-client.development.js:11886:1)
-react-dom-client.development.js:8283  An error occurred in the <ForwardRef(InputBase)> component.
 
-Consider adding an error boundary to your tree to customize error handling behavior.
-Visit https://react.dev/link/error-boundaries to learn more about error boundaries.
 
-defaultOnUncaughtError @ react-dom-client.development.js:8283
+
+renderValue={(selected) => {
+                      const totalOptions = dynamicDropdownOptions[field]?.length || 0;
+                      if (selected.length === 0 || selected.length === totalOptions) {
+                        return 'ALL';
+                      }
+                      if (selected.length > 2) {
+                        return `${selected.length} selected`;
+                      }
+                      return selected.join(', ');
+                    }}
