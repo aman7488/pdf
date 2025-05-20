@@ -40,18 +40,15 @@ sudo systemctl status nginx
 ## Method 2: Install Nginx Using a Local RPM File (Offline or Controlled Environments)
 
 ### Prerequisites:
-- `.rpm` package provided (e.g., `nginx-1.26.1-6.el9.x86_64.rpm`)
+- `.rpm` package provided (`nginx-1.26.1-6.el9.x86_64.rpm` is already there in the path /home/g.fmmisvmapp.001.dev)
 - Sudo access to install local packages
 
 ### Steps:
 
 ```bash
-# Step 1: Upload the RPM file to the server using WinSCP or SCP
+# Step 1: Upload the RPM file to the server
 
-# Example using scp (from local terminal):
-scp nginx-1.26.1-6.el9.x86_64.rpm username@server-ip:~
-
-# Step 2: Install the RPM package
+# Step 2: Install the RPM package (use proper path for .rpm file)
 sudo dnf install ./nginx-1.26.1-6.el9.x86_64.rpm
 
 # (Alternative if dnf fails)
@@ -69,5 +66,5 @@ nginx -v
 
 ---
 
-For Any Queries, Please Contact:
+For any queries, please contact:
 Aman Kumar (2010170)
