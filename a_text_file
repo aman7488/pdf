@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Typography,
   Card,
@@ -6,11 +6,11 @@ import {
   CircularProgress,
   Box,
   Button,
+  Alert
 } from "@mui/material";
 import { loadExcelData } from "./services/ExcelDataService";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import EntityBarChart from "../charts/EntityBarChart";
 import dayjs from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
@@ -19,29 +19,15 @@ import ClientVolumeGrid from "../charts/ClientVolumeGrid";
 import DownloadIcon from "@mui/icons-material/FileDownload";
 import * as XLSX from "xlsx";
 import FilterPanel from "./services/FilterPanel";
+import DynamicBarChart from "../charts/DynamicBarChart";
+import generatePDF from 'react-to-pdf';
 
 dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
 
-const dropdownFields = [
-  "Value Date",
-  "Parent ID",
-  "Client Segment",
-  "Group ID",
-  "SETTL_METH",
-  "Transaction Date",
-  "P_SETTL_MEANS",
-  "R_SETTL_MEANS",
-  "Entity",
-  "Client Label",
-  "Client Long Name",
-  "Client FMID",
-  "SCI LEID",
-  "Client Tier",
-  "Client Country",
-];
+const AppContainer = () => {
+  const targetRef = useRef();
 
-function AppContainer() {
   const [originalDropdownOptions, setOriginalDropdownOptions] = useState({});
   const [dynamicDropdownOptions, setDynamicDropdownOptions] = useState({});
   const [rawData, setRawData] = useState([]);
@@ -49,50 +35,84 @@ function AppContainer() {
   const [error, setError] = useState(null);
   const [filterValues, setFilterValues] = useState({});
   const [valueDateRange, setValueDateRange] = useState({ start: null, end: null });
+  const [columnFields, setColumnFields] = useState([]);
+  const [primaryDateField, setPrimaryDateField] = useState(null);
+
 
   useEffect(() => {
-    const initialFilterValues = {};
-    dropdownFields.forEach(field => {
-      if (field === "Value Date") {
-        initialFilterValues[field] = { start: null, end: null };
-      } else {
-        initialFilterValues[field] = [];
-      }
-    });
-    setFilterValues(initialFilterValues);
-
     const fetchData = async () => {
       try {
-        const filePath = "/data/dummy_dashboard_data.xlsx";
-        const { options, jsonData } = await loadExcelData(filePath, dropdownFields);
+        const filePath = `/data/dummy_dashboard_data.xlsx`;
+        // const filePath = 'C:/Users/2010170/Rotation 2/Highcharts/DVP Trade/dummy_dashboard_data.xlsx';
+        const { options, jsonData, columnNames } = await loadExcelData(filePath);
+
+        setColumnFields(columnNames);
+
+        // for date filter - search for any column named "value date", if not found use any column with dates
+        let datePrimaryField = null;
+        if (columnNames.includes("Value Date")) {
+          datePrimaryField = "Value Date";
+        } else {
+          for (const field of columnNames) {
+            const hasDateValues = jsonData.some(row => {
+              const value = row[field];
+              return value && typeof value === 'string' &&
+                /^\d{4}-\d{2}-\d{2}/.test(value);
+            });
+
+            if (hasDateValues) {
+              datePrimaryField = field;
+              break;
+            }
+          }
+        }
+
+        if (!datePrimaryField && jsonData.length > 0) {
+          setError("No date column found in the data. Please verify the datasource.");
+          datePrimaryField = columnNames[0]; // Fallback to first column
+        }
+
+        // if (!datePrimaryField || !jsonData.some(row => dayjs(row[datePrimaryField], 'YYYY-MM-DD', true).isValid())) {
+        //   setError("No column named 'value date', nor we have dates in the first column.");
+        //   setLoading(false);
+        //   return;
+        // }
+
+        setPrimaryDateField(datePrimaryField);
+
+        const initialFilterValues = {};
+        columnNames.forEach(field => {
+          if (field === datePrimaryField) {
+            initialFilterValues[field] = { start: null, end: null };
+          } else {
+            initialFilterValues[field] = options[field]?.map(option => option.value) || [];
+          }
+        });
+
         setOriginalDropdownOptions(options);
         setDynamicDropdownOptions(options);
         setRawData(jsonData);
-
-        const populatedFilterValues = {};
-        dropdownFields.forEach(field => {
-          if (field === "Value Date") {
-            populatedFilterValues[field] = { start: null, end: null };
-          } else {
-            // populatedFilterValues[field] = [];
-            populatedFilterValues[field] = options[field]?.map(option => option.value) || [];
-          }
-        });
-        setFilterValues(populatedFilterValues);
+        setFilterValues(initialFilterValues);
         setLoading(false);
       } catch (err) {
         setError(err.message);
         setLoading(false);
       }
     };
+
     fetchData();
+
+    const intervalId = setInterval(fetchData, 120000); // re-fetch the data every 120 seconds
+    return () => clearInterval(intervalId);
   }, []);
 
   const getFilteredData = (data, filters, valueRange) => {
+    if (!data.length || !primaryDateField) return [];
+
     return data.filter(row => {
-      const valueDate = row["Value Date"];
-      if (valueDate) {
-        const rowDate = dayjs(valueDate);
+      const dateValue = row[primaryDateField];
+      if (dateValue) {
+        const rowDate = dayjs(dateValue);
         const start = valueRange.start;
         const end = valueRange.end;
 
@@ -102,8 +122,8 @@ function AppContainer() {
         }
       }
 
-      for (const field of dropdownFields) {
-        if (field === "Value Date") continue;
+      for (const field of columnFields) {
+        if (field === primaryDateField) continue;
 
         if (!filters[field] || filters[field].length === 0) {
           return false;
@@ -134,21 +154,20 @@ function AppContainer() {
   // Use memoized filtered data to avoid recalculating on every render
   const filteredData = useMemo(() => {
     return getFilteredData(rawData, filterValues, valueDateRange);
-  }, [rawData, filterValues, valueDateRange]);
+  }, [rawData, filterValues, valueDateRange, primaryDateField, columnFields]);
 
   // Update dynamic dropdown options based on currently filtered data
   useEffect(() => {
     if (!loading && originalDropdownOptions && Object.keys(originalDropdownOptions).length > 0) {
       const updatedOptions = {};
 
-      dropdownFields.forEach(field => {
-        if (field === "Value Date") {
+      columnFields.forEach(field => {
+        if (field === primaryDateField) {
           updatedOptions[field] = originalDropdownOptions[field];
           return;
         }
 
         const tempFilters = { ...filterValues };
-        // delete tempFilters[field];
         tempFilters[field] = originalDropdownOptions[field]?.map(opt => opt.value) || [];
 
         const relevantData = getFilteredData(rawData, tempFilters, valueDateRange);
@@ -176,17 +195,16 @@ function AppContainer() {
 
       setDynamicDropdownOptions(updatedOptions);
     }
-  }, [filterValues, valueDateRange, rawData, originalDropdownOptions, loading]);
+  }, [filterValues, valueDateRange, rawData, originalDropdownOptions, loading, primaryDateField, columnFields]);
 
   const handleFilterChange = (field, value) => {
-    if (field === "Value Date") {
+    if (field === primaryDateField) {
       setFilterValues(prev => ({
         ...prev,
         [field]: value
       }));
       return;
     }
-
 
     const allValues = dynamicDropdownOptions[field]?.map(option => option.value) || [];
 
@@ -205,30 +223,6 @@ function AppContainer() {
         [field]: isAllSelected ? allValues : selected
       }));
     }
-
-
-    // if (value.includes("__all__")) {
-    //   const allValues = dynamicDropdownOptions[field]?.map(option => option.value) || [];
-
-    //   if (filterValues[field]?.length > 0) {
-    //     setFilterValues(prev => ({
-    //       ...prev,
-    //       [field]: []
-    //     }));
-    //   }
-    //   else {
-    //     setFilterValues(prev => ({
-    //       ...prev,
-    //       [field]: allValues
-    //     }));
-    //   }
-    // }
-    // else {
-    //   setFilterValues(prev => ({
-    //     ...prev,
-    //     [field]: value
-    //   }));
-    // }
   };
 
   const handleDownload = () => {
@@ -247,61 +241,277 @@ function AppContainer() {
     );
   }
 
+  // if (error && !rawData.length) {
+  //   return <Typography color="error">{error}</Typography>;
+  // }
+
   if (error) {
-    return <Typography color="error">{error}</Typography>;
+    return (
+      <Box sx={{ p: 4 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
+    );
   }
 
+  // {error && (
+  //   <Alert severity="warning" sx={{ mb: 2 }}>
+  //     {error}
+  //   </Alert>
+  // )}
+
   return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography
-            variant="h4"
-            sx={{ mb: 4, ml: 2, fontWeight: "bold", color: "#1976d2", textAlign: "center" }}
-          >
-            Delivery Versus Payment (DVP) Trade Volumes
-          </Typography>
+    <div id="divToDownload" ref={targetRef}>
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography
+              variant="h4"
+              sx={{ mb: 4, ml: 2, fontWeight: "bold", color: "#1976d2", textAlign: "center" }}
+            >
+              Delivery Versus Payment (DVP) Trade Volumes
+            </Typography>
 
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleDownload}
-            sx={{ minWidth: 0, padding: 1 }}
-            title="Download filtered data"
-          >
-            <DownloadIcon />
-          </Button>
-        </Box>
+            <div justifyContent="space-between" display="flex">
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => generatePDF(targetRef, { filename: 'dvp_dashboard.pdf' })}
+                title="download dashboard pdf"
+                sx={{ mr: 2 }}
+              >
+                Download PDF <DownloadIcon />
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleDownload}
+                title="Download filtered data"
+              >
+                Download Datasheet  <DownloadIcon />
+              </Button>
+            </div>
+          </Box>
 
-        <FilterPanel
-          dropdownFields={dropdownFields}
-          filterValues={filterValues}
-          dynamicDropdownOptions={dynamicDropdownOptions}
-          valueDateRange={valueDateRange}
-          setValueDateRange={setValueDateRange}
-          handleFilterChange={handleFilterChange}
-        />
+          {error && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
 
-        <Card elevation={3} sx={{ mt: 4, p: 2 }}>
-          <CardContent>
-            <EntityBarChart data={filteredData} />
-          </CardContent>
-        </Card>
+          <FilterPanel
+            dropdownFields={columnFields}
+            filterValues={filterValues}
+            dynamicDropdownOptions={dynamicDropdownOptions}
+            valueDateRange={valueDateRange}
+            setValueDateRange={setValueDateRange}
+            handleFilterChange={handleFilterChange}
+            primaryDateField={primaryDateField}
+          />
 
-        <Card elevation={3} sx={{ mt: 4, p: 2 }}>
-          <CardContent>
-            <VolumeChart data={filteredData} />
-          </CardContent>
-        </Card>
+          <Card elevation={3} sx={{ mt: 4, p: 2 }}>
+            <CardContent>
+              <DynamicBarChart data={filteredData} />
+            </CardContent>
+          </Card>
 
-        <Card elevation={3} sx={{ mt: 4, p: 2 }}>
-          <CardContent>
-            <ClientVolumeGrid data={filteredData} />
-          </CardContent>
-        </Card>
-      </>
-    </LocalizationProvider>
+          <Card elevation={3} sx={{ mt: 4, p: 2 }}>
+            <CardContent>
+              <VolumeChart data={filteredData} dateField={primaryDateField} />
+            </CardContent>
+          </Card>
+
+          <Card elevation={3} sx={{ mt: 4, p: 2 }}>
+            <CardContent>
+              <ClientVolumeGrid data={filteredData} dateField={primaryDateField} />
+            </CardContent>
+          </Card>
+        </>
+      </LocalizationProvider>
+    </div>
   );
 }
 
 export default AppContainer;
+
+
+
+
+
+
+
+import React, { useState } from "react";
+import {
+  Grid,
+  TextField,
+  Popover,
+  FormControl,
+  InputLabel,
+  Select,
+  Checkbox,
+  ListItemText,
+  OutlinedInput,
+  MenuItem,
+  Divider,
+  Card,
+  CardContent,
+  Box
+} from "@mui/material";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import dayjs from "dayjs";
+
+const ITEM_HEIGHT = 48;
+const ITEM_PADDING_TOP = 8;
+const MenuProps = {
+  PaperProps: {
+    style: {
+      maxHeight: ITEM_HEIGHT * 4.5 + ITEM_PADDING_TOP,
+      width: 250,
+    },
+  },
+};
+
+const FilterPanel = ({ dropdownFields, filterValues, dynamicDropdownOptions, valueDateRange, setValueDateRange, handleFilterChange, primaryDateField }) => {
+  const [anchorEl, setAnchorEl] = useState(null);
+
+  // const getSortedOptions = (field) => {
+  //   const options = dynamicDropdownOptions[field] || [];
+  //   const nullOption = options.find(opt =>
+  //     opt.value === 'null' || opt.label?.toLowerCase() === '(null)'
+  //   );
+  //   const otherOptions = options.filter(opt => 
+  //     opt.value !== 'null' && opt.label?.toLowerCase() !== '(null)'
+  //   );
+  
+  //   return [
+  //     { value: '__all__', label: '(ALL)' },
+  //     ...Box(nullOption ? [nullOption]:[]),
+  //     ...otherOptions
+  //   ];
+  // };
+
+  return (
+    <Card elevation={3} sx={{ p: 2 }}>
+      <CardContent sx={{ padding: "16px !important" }}>
+        <Grid container spacing={2}>
+          {dropdownFields.map((field, index) => {
+            if (field === primaryDateField) {
+              return (
+                <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
+                  <TextField
+                    label={primaryDateField}
+                    value={
+                      valueDateRange.start && valueDateRange.end
+                        ? `${dayjs(valueDateRange.start).format("YYYY-MM-DD")} to ${dayjs(valueDateRange.end).format("YYYY-MM-DD")}`
+                        : ""
+                    }
+                    onClick={(e) => setAnchorEl(e.currentTarget)}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                    sx={{ maxWidth: "200px", minWidth: "150px" }}
+                  />
+                  <Popover
+                    open={Boolean(anchorEl)}
+                    anchorEl={anchorEl}
+                    onClose={() => setAnchorEl(null)}
+                    anchorOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'left',
+                    }}
+                  >
+                    <Box p={2} display="flex" gap={2}>
+                      <DatePicker
+                        label="Start Date"
+                        value={valueDateRange.start}
+                        onChange={(newValue) => {
+                          const updated = { ...valueDateRange, start: newValue };
+                          setValueDateRange(updated);
+                          handleFilterChange(primaryDateField, updated);
+                        }}
+                      />
+                      <DatePicker
+                        label="End Date"
+                        value={valueDateRange.end}
+                        onChange={(newValue) => {
+                          const updated = { ...valueDateRange, end: newValue };
+                          setValueDateRange(updated);
+                          handleFilterChange(primaryDateField, updated);
+                        }}
+                      />
+                    </Box>
+                  </Popover>
+                </Grid>
+              );
+            }
+
+            return (
+              <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
+                <FormControl fullWidth variant="outlined" size="small" sx={{ minWidth: "200px" }}>
+                  <InputLabel id={`${field}-label`}>{field}</InputLabel>
+                  <Select
+                    labelId={`${field}-label`}
+                    id={`${field}-select`}
+                    multiple
+                    value={filterValues[field] || []}
+                    onChange={(e) => handleFilterChange(field, e.target.value)}
+                    input={<OutlinedInput label={field} />}
+                    renderValue={(selected) => {
+                      // const totalOptions = dynamicDropdownOptions[field]?.length || 0;
+                      // if (selected.length === 0 || selected.length === totalOptions) {
+                      //   return 'ALL';
+                      // }
+                      const availableOptions = dynamicDropdownOptions[field]?.map(opt => opt.value) || [];
+                      const selectedInAvailable = selected.filter(val => availableOptions.includes(val));
+                      const totalOptions = availableOptions.length;
+                      if (selectedInAvailable.length === 0 || selectedInAvailable.length === totalOptions) {
+                        return 'ALL';
+                      }
+
+                      if (selected.length > 2) {
+                        // return `${selected.length} selected`;
+                        return 'Multiple values'
+                      }
+                      return selected.join(', ');
+                    }}
+                    MenuProps={MenuProps}
+                  >
+                    {dynamicDropdownOptions[field]?.length > 0 && (
+                      <MenuItem value="__all__" sx={{ fontWeight: 'bold' }}>
+                        <Checkbox
+                          checked={
+                            Boolean(filterValues[field]) &&
+                            filterValues[field].length > 0 &&
+                            filterValues[field].length === dynamicDropdownOptions[field]?.length
+                          }
+                          indeterminate={filterValues[field]?.length > 0 &&
+                            filterValues[field]?.length < dynamicDropdownOptions[field]?.length}
+                        />
+                        <ListItemText primary="(All)" />
+                      </MenuItem>
+                    )}
+                    <Divider />
+                    {dynamicDropdownOptions[field]?.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        <Checkbox checked={filterValues[field]?.indexOf(option.value) > -1} />
+                        <ListItemText primary={option.label} />
+                      </MenuItem>
+                    ))}
+                    {/* {getSortedOptions(field).map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        <Checkbox checked={filterValues[field]?.indexOf(option.value) > -1} />
+                        <ListItemText primary={option.label} />
+                      </MenuItem>
+                    ))} */}
+                  </Select>
+                </FormControl>
+              </Grid>
+            );
+          })}
+        </Grid>
+      </CardContent>
+    </Card>
+  )
+}
+
+export default FilterPanel;
