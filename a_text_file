@@ -1,3 +1,391 @@
+# SQL Query Editor with API Integration
+
+This implementation provides a complete solution for integrating your existing SQL query editor with your backend API that returns CSV data.
+
+## Files Created
+
+### 1. `apiService.js`
+- **Purpose**: Handles all API communication
+- **Key Features**:
+  - Configurable API client with axios
+  - Error handling for different HTTP status codes
+  - CSV parsing functionality
+  - DataGrid column generation
+  - Request/response interceptors for logging
+
+### 2. `useQueryExecutor.js`
+- **Purpose**: Custom React hook for query execution logic
+- **Key Features**:
+  - Loading states management
+  - Error handling
+  - Query validation
+  - Results formatting
+  - Statistics tracking
+
+### 3. `SelfServiceWithAPI.jsx`
+- **Purpose**: Enhanced version of your original component
+- **Key Features**:
+  - Integrated API calls
+  - Loading indicators
+  - Real-time query results
+  - Enhanced error handling
+  - Result statistics display
+
+## Setup Instructions
+
+### Step 1: Install Dependencies
+Make sure you have these packages installed:
+```bash
+npm install axios
+# All other dependencies should already be available from your existing setup
+```
+
+### Step 2: Update API Configuration
+In `apiService.js`, update the API endpoint:
+```javascript
+const API_BASE_URL = 'https://localhost:8080/api';
+```
+Change this to match your actual API base URL and endpoint path.
+
+### Step 3: API Endpoint Requirements
+Your API should:
+- Accept POST requests at the configured endpoint
+- Accept JSON body with `sqlQuery` and `delimiter` fields
+- Return CSV data as plain text response
+- Handle errors appropriately with proper HTTP status codes
+
+### Step 4: Replace Your Component
+Replace your existing component import:
+```javascript
+// Instead of:
+import SelfService from './SelfService';
+
+// Use:
+import SelfServiceWithAPI from './SelfServiceWithAPI';
+```
+
+## Key Features
+
+### Enhanced Query Execution
+- **Real API Integration**: Actual queries are sent to your backend
+- **Loading States**: Users see loading indicators during query execution
+- **Error Handling**: Comprehensive error messages for different failure scenarios
+- **Query Validation**: Ensures queries have required WHERE and LIMIT clauses
+
+### Improved User Experience
+- **Result Statistics**: Shows row and column counts
+- **Better Feedback**: Clear success/error states
+- **Disabled States**: Buttons are disabled during loading
+- **Enhanced CSV Export**: Includes timestamp in filename
+
+### API Error Handling
+The system handles various error scenarios:
+- **400
+
+
+
+
+
+
+// apiService.js
+import axios from 'axios';
+
+const API_BASE_URL = 'https://localhost:8080/api';
+
+// Configure axios instance with default settings
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000, // 30 seconds timeout
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add request interceptor for logging or auth tokens if needed
+apiClient.interceptors.request.use(
+  (config) => {
+    console.log('API Request:', config.method?.toUpperCase(), config.url);
+    return config;
+  },
+  (error) => {
+    console.error('Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for error handling
+apiClient.interceptors.response.use(
+  (response) => {
+    console.log('API Response:', response.status, response.config.url);
+    return response;
+  },
+  (error) => {
+    console.error('Response Error:', error.response?.status, error.message);
+    return Promise.reject(error);
+  }
+);
+
+/**
+ * Execute SQL query and get CSV response
+ * @param {string} sqlQuery - The SQL query to execute
+ * @param {string} delimiter - The delimiter for CSV (default: ",")
+ * @returns {Promise<string>} - CSV response as string
+ */
+export const executeQuery = async (sqlQuery, delimiter = ',') => {
+  try {
+    if (!sqlQuery || !sqlQuery.trim()) {
+      throw new Error('SQL query cannot be empty');
+    }
+
+    const requestBody = {
+      sqlQuery: sqlQuery.trim(),
+      delimiter: delimiter
+    };
+
+    const response = await apiClient.post('/execute-query', requestBody);
+    
+    // Assuming the API returns CSV data as plain text
+    return response.data;
+  } catch (error) {
+    // Handle different types of errors
+    if (error.response) {
+      // Server responded with error status
+      const status = error.response.status;
+      const message = error.response.data?.message || error.response.statusText;
+      
+      switch (status) {
+        case 400:
+          throw new Error(`Invalid query: ${message}`);
+        case 401:
+          throw new Error('Unauthorized. Please login again.');
+        case 403:
+          throw new Error('Access denied. Insufficient permissions.');
+        case 500:
+          throw new Error('Server error. Please try again later.');
+        default:
+          throw new Error(`API Error (${status}): ${message}`);
+      }
+    } else if (error.request) {
+      // Network error
+      throw new Error('Network error. Please check your connection and try again.');
+    } else {
+      // Other errors
+      throw new Error(error.message || 'An unexpected error occurred');
+    }
+  }
+};
+
+/**
+ * Parse CSV string into structured data
+ * @param {string} csvData - CSV data as string
+ * @returns {Object} - Object containing headers and rows
+ */
+export const parseCSVResponse = (csvData) => {
+  try {
+    if (!csvData || typeof csvData !== 'string') {
+      throw new Error('Invalid CSV data');
+    }
+
+    const lines = csvData.trim().split('\n');
+    
+    if (lines.length === 0) {
+      return { headers: [], rows: [] };
+    }
+
+    // First line contains headers
+    const headers = lines[0].split(',').map(header => header.trim());
+    
+    // Remaining lines contain data
+    const rows = lines.slice(1).map((line, index) => {
+      const values = line.split(',').map(value => value.trim());
+      
+      // Create row object with id and data
+      const rowData = { id: index + 1 };
+      headers.forEach((header, headerIndex) => {
+        rowData[header] = values[headerIndex] || '';
+      });
+      
+      return rowData;
+    });
+
+    return { headers, rows };
+  } catch (error) {
+    console.error('CSV Parsing Error:', error);
+    throw new Error('Failed to parse CSV response');
+  }
+};
+
+/**
+ * Transform headers into DataGrid column format
+ * @param {Array} headers - Array of header strings
+ * @returns {Array} - Array of column objects for DataGrid
+ */
+export const createDataGridColumns = (headers) => {
+  return headers.map((header, index) => ({
+    field: header,
+    headerName: header,
+    width: index === 0 ? 90 : 150, // First column smaller
+    flex: index === headers.length - 1 ? 1 : 0, // Last column flexible
+    sortable: true,
+    filterable: true,
+  }));
+};
+
+export default {
+  executeQuery,
+  parseCSVResponse,
+  createDataGridColumns,
+};
+
+
+
+
+// useQueryExecutor.js
+import { useState, useCallback } from 'react';
+import { executeQuery, parseCSVResponse, createDataGridColumns } from './apiService';
+
+/**
+ * Custom hook for handling SQL query execution
+ * @returns {Object} - Hook state and methods
+ */
+export const useQueryExecutor = () => {
+  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [columns, setColumns] = useState([]);
+  const [error, setError] = useState('');
+  const [lastExecutedQuery, setLastExecutedQuery] = useState('');
+
+  /**
+   * Execute SQL query
+   * @param {string} sqlQuery - SQL query to execute
+   * @param {string} delimiter - CSV delimiter (optional)
+   */
+  const executeQueryHandler = useCallback(async (sqlQuery, delimiter = ',') => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Basic validation
+      if (!sqlQuery || !sqlQuery.trim()) {
+        throw new Error('SQL query cannot be empty');
+      }
+
+      // Validate SQL query format (basic checks)
+      const trimmedQuery = sqlQuery.trim();
+      if (!validateSQLQuery(trimmedQuery)) {
+        throw new Error('Please enter a valid SQL SELECT query with WHERE clause and LIMIT');
+      }
+
+      console.log('Executing query:', trimmedQuery);
+
+      // Call API
+      const csvResponse = await executeQuery(trimmedQuery, delimiter);
+      
+      if (!csvResponse) {
+        throw new Error('No data returned from query');
+      }
+
+      // Parse CSV response
+      const { headers, rows: parsedRows } = parseCSVResponse(csvResponse);
+      
+      if (headers.length === 0) {
+        throw new Error('No data found for the given query');
+      }
+
+      // Create DataGrid columns
+      const gridColumns = createDataGridColumns(headers);
+
+      // Update state
+      setColumns(gridColumns);
+      setRows(parsedRows);
+      setLastExecutedQuery(trimmedQuery);
+      
+      console.log('Query executed successfully:', {
+        headers: headers.length,
+        rows: parsedRows.length
+      });
+
+    } catch (err) {
+      console.error('Query execution error:', err);
+      setError(err.message || 'An error occurred while executing the query');
+      
+      // Clear previous results on error
+      setRows([]);
+      setColumns([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Clear query results and errors
+   */
+  const clearResults = useCallback(() => {
+    setRows([]);
+    setColumns([]);
+    setError('');
+    setLastExecutedQuery('');
+  }, []);
+
+  /**
+   * Basic SQL query validation
+   * @param {string} query - SQL query to validate
+   * @returns {boolean} - Whether query is valid
+   */
+  const validateSQLQuery = (query) => {
+    // Check if query starts with SELECT or WITH
+    const sqlPattern = /^\s*(SELECT|WITH)\s/i;
+    
+    // Check for WHERE clause (required for safety)
+    const hasWhere = /\bWHERE\b/i;
+    
+    // Check for LIMIT clause (required for safety)
+    const hasLimit = /\bLIMIT\b/i;
+    
+    return sqlPattern.test(query) && hasWhere.test(query) && hasLimit.test(query);
+  };
+
+  /**
+   * Get query execution statistics
+   */
+  const getStats = () => ({
+    rowCount: rows.length,
+    columnCount: columns.length,
+    hasData: rows.length > 0,
+    lastQuery: lastExecutedQuery,
+  });
+
+  return {
+    // State
+    loading,
+    rows,
+    columns,
+    error,
+    lastExecutedQuery,
+    
+    // Methods
+    executeQuery: executeQueryHandler,
+    clearResults,
+    getStats,
+    
+    // Computed properties
+    hasData: rows.length > 0,
+    hasError: !!error,
+  };
+};
+
+export default useQueryExecutor;
+
+
+
+
+
+
+
+
+
+
+// SelfServiceWithAPI.jsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   Container,
@@ -8,9 +396,10 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  Divider,
   TextField,
   Tooltip,
+  CircularProgress,
+  Chip,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import * as XLSX from "xlsx";
@@ -20,19 +409,18 @@ import ClearIcon from "@mui/icons-material/Clear";
 import StorageIcon from "@mui/icons-material/Storage";
 import SchemaIcon from "@mui/icons-material/Schema";
 import AbcIcon from "@mui/icons-material/Abc";
+import InfoIcon from "@mui/icons-material/Info";
 import { ExpandMore } from "@mui/icons-material";
 import SimpleCodeEditor from "react-simple-code-editor";
 import Prism from "prismjs";
 import "prismjs/components/prism-sql";
 import "prismjs/themes/prism.css";
 import { useAuth } from "./AuthContext";
+import { useQueryExecutor } from "./useQueryExecutor";
 import axios from "axios";
- 
-const SelfService = () => {
+
+const SelfServiceWithAPI = () => {
   const [query, setQuery] = useState("");
-  const [rows, setRows] = useState([]);
-  const [columns, setColumns] = useState([]);
-  const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedDBs, setExpandedDBs] = useState(new Set());
   const [expandedSchemas, setExpandedSchemas] = useState(new Set());
@@ -64,17 +452,34 @@ const SelfService = () => {
       ],
     },
   ]);
+  
   const editorRef = useRef(null);
   const textareaRef = useRef(null);
- 
+  const { logout } = useAuth();
+  
+  // Use the custom query executor hook
+  const {
+    loading,
+    rows,
+    columns,
+    error,
+    lastExecutedQuery,
+    executeQuery: executeQueryHandler,
+    clearResults,
+    getStats,
+    hasData,
+    hasError,
+  } = useQueryExecutor();
+
   const ellipsisText = {
     maxWidth: "140px",
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    display: "iniline-block",
+    display: "inline-block",
   };
- 
+
+  // Fetch database structure on component mount
   useEffect(() => {
     const fetchColumns = async () => {
       const updatedStructure = await Promise.all(
@@ -84,15 +489,13 @@ const SelfService = () => {
               try {
                 const url = `https://dqslcdpuat.uk.standardchartered.com/dqsl/query/status?table=${db.name}.${schema.name}&showFields=true`;
                 const response = await axios.get(url);
- 
                 const fields = response?.data[0].columns || [];
- 
                 return {
                   ...schema,
                   tableColumns: fields,
                 };
               } catch (err) {
-                console.log("Failed to fetch columns");
+                console.log("Failed to fetch columns for", schema.name);
                 return {
                   ...schema,
                   tableColumns: [],
@@ -110,10 +513,9 @@ const SelfService = () => {
     };
     fetchColumns();
   }, []);
- 
+
   const getSchemaKey = (dbIndex, schemaIndex) => `${dbIndex}-${schemaIndex}`;
-  const { logout } = useAuth();
- 
+
   const handleToggleDB = (dbIndex) => {
     setExpandedDBs((prev) => {
       const newSet = new Set(prev);
@@ -121,7 +523,7 @@ const SelfService = () => {
       return newSet;
     });
   };
- 
+
   const handleToggleSchema = (dbIndex, schemaIndex) => {
     const key = getSchemaKey(dbIndex, schemaIndex);
     setExpandedSchemas((prev) => {
@@ -130,41 +532,42 @@ const SelfService = () => {
       return newSet;
     });
   };
- 
+
   const handleLogout = async () => {
     try {
       await logout();
     } catch (error) {
-      setError(error.message);
+      console.error("Logout error:", error);
     }
   };
- 
+
+  // Handle search functionality
   useEffect(() => {
     if (!searchTerm) {
       setExpandedDBs(new Set());
       setExpandedSchemas(new Set());
       return;
     }
- 
+
     const dbs = new Set();
     const schemas = new Set();
- 
+
     dbStructure.forEach((db, dbIndex) => {
       const dbMatch = db.name.toLowerCase().includes(searchTerm.toLowerCase());
- 
+
       db.schemas.forEach((schema, schemaIndex) => {
         const schemaMatch = schema.name
           .toLowerCase()
           .includes(searchTerm.toLowerCase());
-        const tableMatch = schema.tables.some((table) =>
+        const tableMatch = schema.tableColumns?.some((table) =>
           table.toLowerCase().includes(searchTerm.toLowerCase())
         );
- 
+
         if (schemaMatch || tableMatch) {
           schemas.add(getSchemaKey(dbIndex, schemaIndex));
         }
       });
- 
+
       if (
         dbMatch ||
         [...schemas].some((key) => key.startsWith(`${dbIndex}-`))
@@ -172,76 +575,35 @@ const SelfService = () => {
         dbs.add(dbIndex);
       }
     });
- 
+
     setExpandedDBs(dbs);
     setExpandedSchemas(schemas);
-  }, [searchTerm]);
- 
-  const validateSQL = (query) => {
-    const sqlPattern = /^\s*(SELECT|WITH)\s/i;
-    const hasWhere = /\bWHERE\b/i;
-    const hasLimit = /\bLIMIT\b/i;
-    return (
-      sqlPattern.test(query) && hasWhere.test(query) && hasLimit.test(query)
-    );
-  };
- 
-  const handleSubmit = () => {
-    try {
-      setError("");
- 
-      if (!query.trim()) {
-        setError("SQL query cannot be empty.");
-        return;
-      }
- 
-      if (!validateSQL(query)) {
-        setError("Please enter a valid SQL SELECT query.");
-        return;
-      }
- 
-      const mockData = [
-        { id: 1, name: "Test Data 1", volume: 3 },
-        { id: 2, name: "Test Data 2", volume: 5 },
-      ];
-      const mockColumns = [
-        { field: "id", headerName: "ID", width: 90, fontWeight: "bold" },
-        {
-          field: "name",
-          headerName: "Test Column",
-          flex: 1,
-          fontWeight: "bold",
-        },
-        {
-          field: "volume",
-          headerName: "Volume",
-          width: 150,
-          fontWeight: "bold",
-        },
-      ];
- 
-      setRows(mockData);
-      setColumns(mockColumns);
-    } catch (err) {
-      console.log("Query error: ", err);
-      setError(err.message);
+  }, [searchTerm, dbStructure]);
+
+  // Handle query submission
+  const handleSubmit = async () => {
+    if (!query.trim()) {
+      return;
     }
+    
+    // Execute query using the custom hook
+    await executeQueryHandler(query);
   };
- 
+
+  // Handle clearing query and results
   const handleClear = () => {
     setQuery("");
-    setRows([]);
-    setColumns([]);
-    setError("");
+    clearResults();
   };
- 
+
+  // Handle CSV download
   const handleDownloadCSV = () => {
     try {
-      if (!rows.length) {
-        setError("No data available to download.");
+      if (!hasData) {
+        alert("No data available to download.");
         return;
       }
- 
+
       const csvData = rows.map((row) => {
         const rowData = {};
         columns.forEach((col) => {
@@ -249,48 +611,55 @@ const SelfService = () => {
         });
         return rowData;
       });
- 
+
       const worksheet = XLSX.utils.json_to_sheet(csvData);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-      XLSX.writeFile(workbook, "adhoc_query_result.csv");
+      XLSX.utils.book_append_sheet(workbook, worksheet, "QueryResults");
+      
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      XLSX.writeFile(workbook, `query_result_${timestamp}.csv`);
     } catch (err) {
-      console.log("Download Failed: ", err);
-      setError("Somethinh went wrong while downloading the file.");
+      console.error("Download Failed:", err);
+      alert("Something went wrong while downloading the file.");
     }
   };
- 
+
+  // Setup editor reference
   useEffect(() => {
     if (editorRef.current) {
       textareaRef.current = editorRef.current.querySelector("textarea");
     }
   }, []);
- 
+
+  // Insert text at cursor position in query editor
   const insertAtQuery = (insertText) => {
     if (!editorRef.current) return;
- 
+
     const textArea = textareaRef.current;
     const start = textArea.selectionStart;
     const end = textArea.selectionEnd;
- 
+
     const newQuery =
       query.substring(0, start) + insertText + query.substring(end);
- 
+
     setQuery(newQuery);
- 
+
     requestAnimationFrame(() => {
       textArea.focus();
       textArea.selectionStart = textArea.selectionEnd =
         start + insertText.length;
     });
   };
- 
+
+  const stats = getStats();
+
   return (
     <Container
       maxWidth={false}
       sx={{ width: "100vw", height: "100vh", paddingTop: 4 }}
     >
       <Box sx={{ display: "flex", height: "100%" }}>
+        {/* Database Structure Panel */}
         <Box
           sx={{
             width: "20%",
@@ -306,7 +675,7 @@ const SelfService = () => {
           >
             Databases
           </Typography>
- 
+
           <TextField
             fullWidth
             variant="outlined"
@@ -316,10 +685,10 @@ const SelfService = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             sx={{ mb: 2 }}
           />
- 
+
           {dbStructure?.map((db, dbIndex) => {
             const isDBExpanded = expandedDBs.has(dbIndex);
- 
+
             return (
               <Accordion
                 key={dbIndex}
@@ -341,12 +710,12 @@ const SelfService = () => {
                     </Typography>
                   </Box>
                 </AccordionSummary>
- 
+
                 <AccordionDetails>
                   {db?.schemas?.map((schema, schemaIndex) => {
                     const schemaKey = getSchemaKey(dbIndex, schemaIndex);
                     const isSchemaExpanded = expandedSchemas.has(schemaKey);
- 
+
                     return (
                       <Accordion
                         key={schemaKey}
@@ -378,7 +747,7 @@ const SelfService = () => {
                             </Tooltip>
                           </Box>
                         </AccordionSummary>
- 
+
                         <AccordionDetails>
                           {schema?.tableColumns?.map((table, tableIndex) => (
                             <Box key={tableIndex}>
@@ -426,9 +795,12 @@ const SelfService = () => {
             );
           })}
         </Box>
+
+        {/* Main Content Panel */}
         <Box
           sx={{ width: "80%", pl: 2, display: "flex", flexDirection: "column" }}
         >
+          {/* Header */}
           <Box
             sx={{
               display: "flex",
@@ -451,12 +823,17 @@ const SelfService = () => {
               >
                 Logout
               </Button>
-              <Button variant="contained" onClick={handleDownloadCSV}>
+              <Button 
+                variant="contained" 
+                onClick={handleDownloadCSV}
+                disabled={!hasData}
+              >
                 <DownloadIcon />
               </Button>
             </Box>
           </Box>
- 
+
+          {/* Query Editor Section */}
           <Box
             sx={{
               display: "flex",
@@ -482,7 +859,7 @@ const SelfService = () => {
                     Prism.highlight(code, Prism.languages.sql, "sql")
                   }
                   padding={16}
-                  placeholder="Enter SQL query"
+                  placeholder="Enter SQL query (must include WHERE and LIMIT clauses)"
                   style={{
                     fontFamily: "monospace",
                     fontSize: 16,
@@ -497,13 +874,11 @@ const SelfService = () => {
                     try {
                       e.preventDefault();
                       const droppedText = e.dataTransfer.getData("text/plain");
-                      if (!droppedText) {
-                        throw new Error("Invalid data dropped");
+                      if (droppedText) {
+                        setQuery((prev) => prev + " " + droppedText);
                       }
-                      setQuery((prev) => prev + " " + droppedText);
                     } catch (err) {
-                      console.log("Drop Error: ", err);
-                      setError(err);
+                      console.error("Drop Error:", err);
                     }
                   }}
                   onDragOver={(e) => e.preventDefault()}
@@ -523,35 +898,67 @@ const SelfService = () => {
                 variant="contained"
                 sx={{ bgcolor: "#27ae60", height: "40px" }}
                 onClick={handleSubmit}
+                disabled={loading || !query.trim()}
               >
-                <CheckIcon />
+                {loading ? <CircularProgress size={20} color="inherit" /> : <CheckIcon />}
               </Button>
               <Button
                 variant="contained"
                 sx={{ bgcolor: "#e74c3c", height: "40px" }}
                 onClick={handleClear}
+                disabled={loading}
               >
                 <ClearIcon />
               </Button>
             </Box>
           </Box>
- 
-          {error && (
-            <Alert severity="error" sx={{ mb: 4 }}>
-              {error}
-            </Alert>
+
+          {/* Status/Info Section */}
+          {(hasData || hasError || loading) && (
+            <Box sx={{ mb: 2 }}>
+              {loading && (
+                <Alert severity="info" icon={<CircularProgress size={20} />}>
+                  Executing query... Please wait.
+                </Alert>
+              )}
+              
+              {hasError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              )}
+
+              {hasData && !loading && (
+                <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+                  <Chip
+                    icon={<InfoIcon />}
+                    label={`${stats.rowCount} rows`}
+                    color="primary"
+                    size="small"
+                  />
+                  <Chip
+                    label={`${stats.columnCount} columns`}
+                    color="secondary"
+                    size="small"
+                  />
+                </Box>
+              )}
+            </Box>
           )}
- 
-          <Box sx={{ boxShadow: 8, padding: "30px", height: "auto" }}>
+
+          {/* Results Section */}
+          <Box sx={{ boxShadow: 8, padding: "30px", height: "auto", flexGrow: 1 }}>
             <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
               Query Result:
             </Typography>
             <DataGrid
               rows={rows}
               columns={columns}
-              pageSize={5}
-              rowsPerPageOptions={[5, 10, 20]}
+              loading={loading}
+              pageSize={25}
+              rowsPerPageOptions={[10, 25, 50, 100]}
               filterMode="client"
+              disableSelectionOnClick
               sx={{
                 "& .MuiDataGrid-columnHeaders": {
                   fontWeight: "bold",
@@ -562,8 +969,10 @@ const SelfService = () => {
                 "& .MuiDataGrid-footerContainer": {
                   fontWeight: "bold",
                 },
-                height: "auto",
+                height: hasData ? "auto" : "300px",
+                minHeight: "300px",
               }}
+              getRowId={(row) => row.id}
             />
           </Box>
         </Box>
@@ -571,5 +980,5 @@ const SelfService = () => {
     </Container>
   );
 };
- 
-export default SelfService;
+
+export default SelfServiceWithAPI;
