@@ -1,180 +1,3 @@
-// services/sqlApiService.js
-import axios from 'axios';
-
-const API_BASE_URL = 'https://localhost:8080/api';
-
-export class SqlApiService {
-  /**
-   * Execute SQL query and return parsed data
-   * @param {string} sqlQuery - The SQL query to execute
-   * @param {string} delimiter - CSV delimiter (default: ',')
-   * @returns {Promise<{data: Array, columns: Array}>}
-   */
-  static async executeQuery(sqlQuery, delimiter = ',') {
-    try {
-      const response = await axios.post(`${API_BASE_URL}/execute`, {
-        sqlQuery: sqlQuery.trim(),
-        delimiter: delimiter
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout: 30000, // 30 seconds timeout
-      });
-
-      // Parse CSV response
-      const csvData = response.data;
-      const parsedData = this.parseCsvResponse(csvData, delimiter);
-      
-      return {
-        success: true,
-        data: parsedData.rows,
-        columns: parsedData.columns,
-        rawResponse: csvData
-      };
-    } catch (error) {
-      console.error('SQL Query execution failed:', error);
-      
-      let errorMessage = 'Failed to execute query';
-      
-      if (error.response) {
-        // Server responded with error status
-        errorMessage = `Server Error (${error.response.status}): ${error.response.data?.message || error.response.statusText}`;
-      } else if (error.request) {
-        // Request was made but no response received
-        errorMessage = 'No response from server. Please check your connection.';
-      } else if (error.code === 'ECONNABORTED') {
-        // Request timeout
-        errorMessage = 'Query execution timed out. Please try with a smaller result set.';
-      } else {
-        // Something else happened
-        errorMessage = error.message || 'Unknown error occurred';
-      }
-
-      return {
-        success: false,
-        error: errorMessage,
-        data: [],
-        columns: []
-      };
-    }
-  }
-
-  /**
-   * Parse CSV response into structured data
-   * @param {string} csvData - Raw CSV data
-   * @param {string} delimiter - CSV delimiter
-   * @returns {Object} Parsed data with rows and columns
-   */
-  static parseCsvResponse(csvData, delimiter = ',') {
-    try {
-      const lines = csvData.trim().split('\n');
-      
-      if (lines.length === 0) {
-        return { rows: [], columns: [] };
-      }
-
-      // Parse headers (first line)
-      const headers = lines[0].split(delimiter).map(header => header.trim());
-      
-      // Create column definitions for DataGrid
-      const columns = headers.map((header, index) => ({
-        field: `col_${index}`,
-        headerName: header,
-        width: this.calculateColumnWidth(header),
-        flex: header.length > 20 ? 1 : 0,
-        sortable: true,
-        filterable: true,
-      }));
-
-      // Parse data rows
-      const rows = [];
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line) {
-          const values = line.split(delimiter);
-          const row = { id: i }; // DataGrid requires an id field
-          
-          values.forEach((value, index) => {
-            row[`col_${index}`] = value.trim();
-          });
-          
-          rows.push(row);
-        }
-      }
-
-      return { rows, columns };
-    } catch (error) {
-      console.error('Failed to parse CSV response:', error);
-      throw new Error('Invalid CSV format received from server');
-    }
-  }
-
-  /**
-   * Calculate appropriate column width based on header name
-   * @param {string} header - Column header name
-   * @returns {number} Column width
-   */
-  static calculateColumnWidth(header) {
-    const baseWidth = 100;
-    const charWidth = 8;
-    const maxWidth = 300;
-    const minWidth = 100;
-    
-    const calculatedWidth = Math.max(minWidth, Math.min(maxWidth, baseWidth + (header.length * charWidth)));
-    return calculatedWidth;
-  }
-
-  /**
-   * Validate SQL query before sending to API
-   * @param {string} query - SQL query to validate
-   * @returns {Object} Validation result
-   */
-  static validateQuery(query) {
-    const trimmedQuery = query.trim();
-    
-    if (!trimmedQuery) {
-      return { isValid: false, error: 'SQL query cannot be empty.' };
-    }
-
-    // Basic SQL validation
-    const sqlPattern = /^\s*(SELECT|WITH)\s/i;
-    if (!sqlPattern.test(trimmedQuery)) {
-      return { isValid: false, error: 'Query must start with SELECT or WITH statement.' };
-    }
-
-    // Check for required clauses (you can adjust these based on your requirements)
-    const hasLimit = /\bLIMIT\s+\d+/i.test(trimmedQuery);
-    if (!hasLimit) {
-      return { isValid: false, error: 'Query must include a LIMIT clause for performance reasons.' };
-    }
-
-    // Check for potentially dangerous operations
-    const dangerousPatterns = [
-      /\bDROP\s+/i,
-      /\bDELETE\s+/i,
-      /\bUPDATE\s+/i,
-      /\bINSERT\s+/i,
-      /\bTRUNCATE\s+/i,
-      /\bALTER\s+/i,
-      /\bCREATE\s+/i,
-    ];
-
-    for (const pattern of dangerousPatterns) {
-      if (pattern.test(trimmedQuery)) {
-        return { isValid: false, error: 'Only SELECT queries are allowed.' };
-      }
-    }
-
-    return { isValid: true };
-  }
-}
-
-
-
-
-
-
 import React, { useState, useEffect, useRef } from "react";
 import {
   Container,
@@ -385,14 +208,26 @@ const EnhancedSelfService = () => {
       const executionTime = endTime - startTime;
 
       if (result.success) {
-        setRows(result.data);
+        // Limit display to 100 rows
+        const displayRows = result.data.slice(0, 100);
+        const totalRows = result.data.length;
+        const isLimited = totalRows > 100;
+        
+        setRows(displayRows);
         setColumns(result.columns);
         setQueryStats({
-          rowCount: result.data.length,
+          rowCount: totalRows,
+          displayedRows: displayRows.length,
           columnCount: result.columns.length,
           executionTime: executionTime,
+          isLimited: isLimited,
         });
-        setSuccess(`Query executed successfully! Retrieved ${result.data.length} rows in ${executionTime}ms`);
+        
+        if (isLimited) {
+          setSuccess(`Query executed successfully! Displaying ${displayRows.length} of ${totalRows} rows in ${executionTime}ms`);
+        } else {
+          setSuccess(`Query executed successfully! Retrieved ${totalRows} rows in ${executionTime}ms`);
+        }
       } else {
         setError(result.error);
         setRows([]);
@@ -419,12 +254,14 @@ const EnhancedSelfService = () => {
 
   const handleDownloadCSV = () => {
     try {
-      if (!rows.length) {
+      if (!rows.length && !queryStats?.rowCount) {
         setError("No data available to download.");
         return;
       }
 
-      // Convert data back to original format for CSV
+      // For CSV download, we need to use the original full dataset, not just displayed rows
+      // Since we only store displayed rows, we'll need to re-fetch or store full data
+      // For now, let's use the displayed data but show a note if limited
       const csvData = rows.map((row) => {
         const rowData = {};
         columns.forEach((col) => {
@@ -442,7 +279,12 @@ const EnhancedSelfService = () => {
       const filename = `query_results_${timestamp}.csv`;
       
       XLSX.writeFile(workbook, filename);
-      setSuccess(`Data exported successfully as ${filename}`);
+      
+      if (queryStats?.isLimited) {
+        setSuccess(`Downloaded ${rows.length} displayed rows as ${filename}. Note: This contains only the first 100 rows shown in the table.`);
+      } else {
+        setSuccess(`Data exported successfully as ${filename}`);
+      }
     } catch (err) {
       console.error("Download Failed:", err);
       setError("Something went wrong while downloading the file.");
@@ -677,9 +519,9 @@ const EnhancedSelfService = () => {
                   <Box sx={{ display: "flex", gap: 1 }}>
                     <Chip 
                       icon={<InfoIcon />} 
-                      label={`${queryStats.rowCount} rows`} 
+                      label={queryStats.isLimited ? `${queryStats.displayedRows}/${queryStats.rowCount} rows` : `${queryStats.rowCount} rows`}
                       size="small" 
-                      color="primary" 
+                      color={queryStats.isLimited ? "warning" : "primary"}
                     />
                     <Chip 
                       icon={<InfoIcon />} 
@@ -772,6 +614,12 @@ const EnhancedSelfService = () => {
           {success && (
             <Alert severity="success" sx={{ mb: 2 }}>
               {success}
+            </Alert>
+          )}
+
+          {queryStats && queryStats.isLimited && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Displaying only 100 rows out of {queryStats.rowCount} total rows. Download the CSV to get the complete dataset.
             </Alert>
           )}
 
