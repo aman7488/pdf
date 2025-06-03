@@ -1,97 +1,575 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
+  Container,
+  Typography,
   Button,
-  FormControlLabel,
-  Checkbox,
-  FormGroup,
+  Box,
+  Alert,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Divider,
+  TextField,
+  Tooltip,
 } from "@mui/material";
+import { DataGrid } from "@mui/x-data-grid";
 import * as XLSX from "xlsx";
-
-const DownloadDialog = ({ open, onClose, data, columnFields }) => {
-  const [selectedColumns, setSelectedColumns] = useState(columnFields);
-
-  const toggleColumn = (column) => {
-    setSelectedColumns((prev) =>
-      prev.includes(column)
-        ? prev.filter((col) => col !== column)
-        : [...prev, column]
-    );
+import DownloadIcon from "@mui/icons-material/Download";
+import CheckIcon from "@mui/icons-material/Check";
+import ClearIcon from "@mui/icons-material/Clear";
+import StorageIcon from "@mui/icons-material/Storage";
+import SchemaIcon from "@mui/icons-material/Schema";
+import AbcIcon from "@mui/icons-material/Abc";
+import { ExpandMore } from "@mui/icons-material";
+import SimpleCodeEditor from "react-simple-code-editor";
+import Prism from "prismjs";
+import "prismjs/components/prism-sql";
+import "prismjs/themes/prism.css";
+import { useAuth } from "./AuthContext";
+import axios from "axios";
+ 
+const SelfService = () => {
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState([]);
+  const [columns, setColumns] = useState([]);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [expandedDBs, setExpandedDBs] = useState(new Set());
+  const [expandedSchemas, setExpandedSchemas] = useState(new Set());
+  const [dbStructure, setDbStructure] = useState([
+    {
+      name: "SCI",
+      schemas: [
+        {
+          name: "P52LESUBPROFILE",
+          tableColumns: [],
+        },
+        {
+          name: "P119LMPREGULATORYINFO",
+          tableColumns: [],
+        },
+      ],
+    },
+    {
+      name: "CDU_LAKE",
+      schemas: [
+        {
+          name: "audit_document_details_storage_uat",
+          tableColumns: [],
+        },
+        {
+          name: "termsheets_storage",
+          tableColumns: [],
+        },
+      ],
+    },
+  ]);
+  const editorRef = useRef(null);
+  const textareaRef = useRef(null);
+ 
+  const ellipsisText = {
+    maxWidth: "140px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    display: "iniline-block",
   };
-
-  const handleSelectAll = () => {
-    setSelectedColumns(columnFields);
-  };
-
-  const handleDownload = () => {
-    const reducedData = data.map((row) =>
-      selectedColumns.reduce((acc, col) => {
-        acc[col] = row[col];
-        return acc;
-      }, {})
-    );
-
-    const worksheet = XLSX.utils.json_to_sheet(reducedData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-    XLSX.writeFile(workbook, "DVP_Trade_Volumes_Selected_Columns.xlsx");
-    onClose();
-  };
-
-  return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Select Columns to Download</DialogTitle>
-      <DialogContent dividers>
-        <FormGroup>
-          {columnFields.map((field) => (
-            <FormControlLabel
-              key={field}
-              control={
-                <Checkbox
-                  checked={selectedColumns.includes(field)}
-                  onChange={() => toggleColumn(field)}
-                />
+ 
+  useEffect(() => {
+    const fetchColumns = async () => {
+      const updatedStructure = await Promise.all(
+        dbStructure.map(async (db) => {
+          const updatedSchema = await Promise.all(
+            db.schemas.map(async (schema) => {
+              try {
+                const url = `https://dqslcdpuat.uk.standardchartered.com/dqsl/query/status?table=${db.name}.${schema.name}&showFields=true`;
+                const response = await axios.get(url);
+ 
+                const fields = response?.data[0].columns || [];
+ 
+                return {
+                  ...schema,
+                  tableColumns: fields,
+                };
+              } catch (err) {
+                console.log("Failed to fetch columns");
+                return {
+                  ...schema,
+                  tableColumns: [],
+                };
               }
-              label={field}
+            })
+          );
+          return {
+            ...db,
+            schemas: updatedSchema,
+          };
+        })
+      );
+      setDbStructure(updatedStructure);
+    };
+    fetchColumns();
+  }, []);
+ 
+  const getSchemaKey = (dbIndex, schemaIndex) => `${dbIndex}-${schemaIndex}`;
+  const { logout } = useAuth();
+ 
+  const handleToggleDB = (dbIndex) => {
+    setExpandedDBs((prev) => {
+      const newSet = new Set(prev);
+      newSet.has(dbIndex) ? newSet.delete(dbIndex) : newSet.add(dbIndex);
+      return newSet;
+    });
+  };
+ 
+  const handleToggleSchema = (dbIndex, schemaIndex) => {
+    const key = getSchemaKey(dbIndex, schemaIndex);
+    setExpandedSchemas((prev) => {
+      const newSet = new Set(prev);
+      newSet.has(key) ? newSet.delete(key) : newSet.add(key);
+      return newSet;
+    });
+  };
+ 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+ 
+  useEffect(() => {
+    if (!searchTerm) {
+      setExpandedDBs(new Set());
+      setExpandedSchemas(new Set());
+      return;
+    }
+ 
+    const dbs = new Set();
+    const schemas = new Set();
+ 
+    dbStructure.forEach((db, dbIndex) => {
+      const dbMatch = db.name.toLowerCase().includes(searchTerm.toLowerCase());
+ 
+      db.schemas.forEach((schema, schemaIndex) => {
+        const schemaMatch = schema.name
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase());
+        const tableMatch = schema.tables.some((table) =>
+          table.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+ 
+        if (schemaMatch || tableMatch) {
+          schemas.add(getSchemaKey(dbIndex, schemaIndex));
+        }
+      });
+ 
+      if (
+        dbMatch ||
+        [...schemas].some((key) => key.startsWith(`${dbIndex}-`))
+      ) {
+        dbs.add(dbIndex);
+      }
+    });
+ 
+    setExpandedDBs(dbs);
+    setExpandedSchemas(schemas);
+  }, [searchTerm]);
+ 
+  const validateSQL = (query) => {
+    const sqlPattern = /^\s*(SELECT|WITH)\s/i;
+    const hasWhere = /\bWHERE\b/i;
+    const hasLimit = /\bLIMIT\b/i;
+    return (
+      sqlPattern.test(query) && hasWhere.test(query) && hasLimit.test(query)
+    );
+  };
+ 
+  const handleSubmit = () => {
+    try {
+      setError("");
+ 
+      if (!query.trim()) {
+        setError("SQL query cannot be empty.");
+        return;
+      }
+ 
+      if (!validateSQL(query)) {
+        setError("Please enter a valid SQL SELECT query.");
+        return;
+      }
+ 
+      const mockData = [
+        { id: 1, name: "Test Data 1", volume: 3 },
+        { id: 2, name: "Test Data 2", volume: 5 },
+      ];
+      const mockColumns = [
+        { field: "id", headerName: "ID", width: 90, fontWeight: "bold" },
+        {
+          field: "name",
+          headerName: "Test Column",
+          flex: 1,
+          fontWeight: "bold",
+        },
+        {
+          field: "volume",
+          headerName: "Volume",
+          width: 150,
+          fontWeight: "bold",
+        },
+      ];
+ 
+      setRows(mockData);
+      setColumns(mockColumns);
+    } catch (err) {
+      console.log("Query error: ", err);
+      setError(err.message);
+    }
+  };
+ 
+  const handleClear = () => {
+    setQuery("");
+    setRows([]);
+    setColumns([]);
+    setError("");
+  };
+ 
+  const handleDownloadCSV = () => {
+    try {
+      if (!rows.length) {
+        setError("No data available to download.");
+        return;
+      }
+ 
+      const csvData = rows.map((row) => {
+        const rowData = {};
+        columns.forEach((col) => {
+          rowData[col.headerName] = row[col.field];
+        });
+        return rowData;
+      });
+ 
+      const worksheet = XLSX.utils.json_to_sheet(csvData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+      XLSX.writeFile(workbook, "adhoc_query_result.csv");
+    } catch (err) {
+      console.log("Download Failed: ", err);
+      setError("Somethinh went wrong while downloading the file.");
+    }
+  };
+ 
+  useEffect(() => {
+    if (editorRef.current) {
+      textareaRef.current = editorRef.current.querySelector("textarea");
+    }
+  }, []);
+ 
+  const insertAtQuery = (insertText) => {
+    if (!editorRef.current) return;
+ 
+    const textArea = textareaRef.current;
+    const start = textArea.selectionStart;
+    const end = textArea.selectionEnd;
+ 
+    const newQuery =
+      query.substring(0, start) + insertText + query.substring(end);
+ 
+    setQuery(newQuery);
+ 
+    requestAnimationFrame(() => {
+      textArea.focus();
+      textArea.selectionStart = textArea.selectionEnd =
+        start + insertText.length;
+    });
+  };
+ 
+  return (
+    <Container
+      maxWidth={false}
+      sx={{ width: "100vw", height: "100vh", paddingTop: 4 }}
+    >
+      <Box sx={{ display: "flex", height: "100%" }}>
+        <Box
+          sx={{
+            width: "20%",
+            pr: 2,
+            borderRight: "1px solid #ccc",
+            overflowY: "auto",
+            height: "100vh",
+          }}
+        >
+          <Typography
+            variant="h6"
+            sx={{ color: "#2e86c1", fontWeight: "bold", mb: 2 }}
+          >
+            Databases
+          </Typography>
+ 
+          <TextField
+            fullWidth
+            variant="outlined"
+            size="small"
+            placeholder="Search DB, Schema, Table..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{ mb: 2 }}
+          />
+ 
+          {dbStructure?.map((db, dbIndex) => {
+            const isDBExpanded = expandedDBs.has(dbIndex);
+ 
+            return (
+              <Accordion
+                key={dbIndex}
+                expanded={isDBExpanded}
+                onChange={() => handleToggleDB(dbIndex)}
+              >
+                <AccordionSummary expandIcon={<ExpandMore />}>
+                  <Box sx={{ display: "flex", gap: 2 }}>
+                    <SchemaIcon sx={{ color: "#8e44ad" }} />
+                    <Typography
+                      draggable
+                      onDragStart={(e) =>
+                        e.dataTransfer.setData("text/plain", db.name)
+                      }
+                      onDoubleClick={() => insertAtQuery(db.name)}
+                      sx={{ fontWeight: "bold", cursor: "grab" }}
+                    >
+                      {db.name}
+                    </Typography>
+                  </Box>
+                </AccordionSummary>
+ 
+                <AccordionDetails>
+                  {db?.schemas?.map((schema, schemaIndex) => {
+                    const schemaKey = getSchemaKey(dbIndex, schemaIndex);
+                    const isSchemaExpanded = expandedSchemas.has(schemaKey);
+ 
+                    return (
+                      <Accordion
+                        key={schemaKey}
+                        expanded={isSchemaExpanded}
+                        onChange={() =>
+                          handleToggleSchema(dbIndex, schemaIndex)
+                        }
+                        sx={{ ml: 2 }}
+                      >
+                        <AccordionSummary expandIcon={<ExpandMore />}>
+                          <Box sx={{ display: "flex", gap: 2 }}>
+                            <StorageIcon sx={{ color: "#27ae60" }} />
+                            <Tooltip title={schema.name}>
+                              <Typography
+                                draggable
+                                onDragStart={(e) =>
+                                  e.dataTransfer.setData(
+                                    "text/plain",
+                                    `${db.name}.${schema.name}`
+                                  )
+                                }
+                                onDoubleClick={() =>
+                                  insertAtQuery(`${db.name}.${schema.name}`)
+                                }
+                                sx={{ cursor: "grab", ...ellipsisText }}
+                              >
+                                {schema.name}
+                              </Typography>
+                            </Tooltip>
+                          </Box>
+                        </AccordionSummary>
+ 
+                        <AccordionDetails>
+                          {schema?.tableColumns?.map((table, tableIndex) => (
+                            <Box key={tableIndex}>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 2,
+                                }}
+                              >
+                                <AbcIcon sx={{ color: "#2e86c1" }} />
+                                <Tooltip title={table}>
+                                  <Typography
+                                    draggable
+                                    onDragStart={(e) =>
+                                      e.dataTransfer.setData(
+                                        "text/plain",
+                                        `${db.name}.${schema.name}.${table}`
+                                      )
+                                    }
+                                    onDoubleClick={() =>
+                                      insertAtQuery(
+                                        `${db.name}.${schema.name}.${table}`
+                                      )
+                                    }
+                                    sx={{
+                                      ml: 2,
+                                      py: 0.5,
+                                      cursor: "grab",
+                                      ...ellipsisText,
+                                    }}
+                                  >
+                                    {table}
+                                  </Typography>
+                                </Tooltip>
+                              </Box>
+                            </Box>
+                          ))}
+                        </AccordionDetails>
+                      </Accordion>
+                    );
+                  })}
+                </AccordionDetails>
+              </Accordion>
+            );
+          })}
+        </Box>
+        <Box
+          sx={{ width: "80%", pl: 2, display: "flex", flexDirection: "column" }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              mb: 2,
+            }}
+          >
+            <Typography
+              variant="h4"
+              sx={{ color: "#2e86c1", fontWeight: "bold" }}
+            >
+              FM-MIS Self Service
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <Button
+                variant="contained"
+                onClick={handleLogout}
+                sx={{ bgcolor: "red" }}
+              >
+                Logout
+              </Button>
+              <Button variant="contained" onClick={handleDownloadCSV}>
+                <DownloadIcon />
+              </Button>
+            </Box>
+          </Box>
+ 
+          <Box
+            sx={{
+              display: "flex",
+              gap: 2,
+              mb: 4,
+              boxShadow: 8,
+              padding: "30px",
+              borderRadius: 1,
+            }}
+          >
+            <Box sx={{ maxWidth: "false", width: "100%" }}>
+              <Typography
+                variant="subtitle1"
+                sx={{ mb: 1, fontWeight: "bold" }}
+              >
+                Enter SQL Query
+              </Typography>
+              <div ref={editorRef}>
+                <SimpleCodeEditor
+                  value={query}
+                  onValueChange={(code) => setQuery(code)}
+                  highlight={(code) =>
+                    Prism.highlight(code, Prism.languages.sql, "sql")
+                  }
+                  padding={16}
+                  placeholder="Enter SQL query"
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: 16,
+                    border: "1px solid #ccc",
+                    borderRadius: 4,
+                    backgroundColor: "#f9f9f9",
+                    minHeight: "150px",
+                    width: "auto",
+                    whiteSpace: "pre-wrap",
+                  }}
+                  onDrop={(e) => {
+                    try {
+                      e.preventDefault();
+                      const droppedText = e.dataTransfer.getData("text/plain");
+                      if (!droppedText) {
+                        throw new Error("Invalid data dropped");
+                      }
+                      setQuery((prev) => prev + " " + droppedText);
+                    } catch (err) {
+                      console.log("Drop Error: ", err);
+                      setError(err);
+                    }
+                  }}
+                  onDragOver={(e) => e.preventDefault()}
+                />
+              </div>
+            </Box>
+            <Box
+              sx={{
+                display: "flex",
+                gap: 2,
+                justifyContent: "center",
+                alignItems: "center",
+                borderRadius: 1,
+              }}
+            >
+              <Button
+                variant="contained"
+                sx={{ bgcolor: "#27ae60", height: "40px" }}
+                onClick={handleSubmit}
+              >
+                <CheckIcon />
+              </Button>
+              <Button
+                variant="contained"
+                sx={{ bgcolor: "#e74c3c", height: "40px" }}
+                onClick={handleClear}
+              >
+                <ClearIcon />
+              </Button>
+            </Box>
+          </Box>
+ 
+          {error && (
+            <Alert severity="error" sx={{ mb: 4 }}>
+              {error}
+            </Alert>
+          )}
+ 
+          <Box sx={{ boxShadow: 8, padding: "30px", height: "auto" }}>
+            <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
+              Query Result:
+            </Typography>
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              pageSize={5}
+              rowsPerPageOptions={[5, 10, 20]}
+              filterMode="client"
+              sx={{
+                "& .MuiDataGrid-columnHeaders": {
+                  fontWeight: "bold",
+                },
+                "& .MuiDataGrid-columnHeaderTitle": {
+                  fontWeight: "bold",
+                },
+                "& .MuiDataGrid-footerContainer": {
+                  fontWeight: "bold",
+                },
+                height: "auto",
+              }}
             />
-          ))}
-        </FormGroup>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleSelectAll}>Select All</Button>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleDownload} variant="contained" color="primary">
-          Download
-        </Button>
-      </DialogActions>
-    </Dialog>
+          </Box>
+        </Box>
+      </Box>
+    </Container>
   );
 };
-
-export default DownloadDialog;
-
-
-
-
-
-const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
-
-import DownloadDialog from "./DownloadDialog";
-
-<Button
-  startIcon={<DownloadIcon />}
-  variant="outlined"
-  onClick={() => setIsDownloadDialogOpen(true)}
->
-  Download Datasheet
-</Button>
-
-<DownloadDialog
-  open={isDownloadDialogOpen}
-  onClose={() => setIsDownloadDialogOpen(false)}
-  data={filteredData}
-  columnFields={columnFields}
-/>
+ 
+export default SelfService;
