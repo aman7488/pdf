@@ -11,8 +11,6 @@ import {
   Divider,
   TextField,
   Tooltip,
-  CircularProgress,
-  Chip,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import * as XLSX from "xlsx";
@@ -22,8 +20,6 @@ import ClearIcon from "@mui/icons-material/Clear";
 import StorageIcon from "@mui/icons-material/Storage";
 import SchemaIcon from "@mui/icons-material/Schema";
 import AbcIcon from "@mui/icons-material/Abc";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import InfoIcon from "@mui/icons-material/Info";
 import { ExpandMore } from "@mui/icons-material";
 import SimpleCodeEditor from "react-simple-code-editor";
 import Prism from "prismjs";
@@ -31,16 +27,14 @@ import "prismjs/components/prism-sql";
 import "prismjs/themes/prism.css";
 import { useAuth } from "./AuthContext";
 import axios from "axios";
-import { SqlApiService } from "../services/sqlApiService";
+import { SqlApiService } from "./services/SqlApiService";
 
-const EnhancedSelfService = () => {
+const SelfService = () => {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
+  const [rowCount, setRowCount] = useState();
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [queryStats, setQueryStats] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedDBs, setExpandedDBs] = useState(new Set());
   const [expandedSchemas, setExpandedSchemas] = useState(new Set());
@@ -80,7 +74,7 @@ const EnhancedSelfService = () => {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    display: "inline-block",
+    display: "iniline-block",
   };
 
   useEffect(() => {
@@ -164,7 +158,7 @@ const EnhancedSelfService = () => {
         const schemaMatch = schema.name
           .toLowerCase()
           .includes(searchTerm.toLowerCase());
-        const tableMatch = schema.tableColumns?.some((table) =>
+        const tableMatch = schema.tables.some((table) =>
           table.toLowerCase().includes(searchTerm.toLowerCase())
         );
 
@@ -183,63 +177,69 @@ const EnhancedSelfService = () => {
 
     setExpandedDBs(dbs);
     setExpandedSchemas(schemas);
-  }, [searchTerm, dbStructure]);
+  }, [searchTerm]);
+
+  // const validateSQL = (query) => {
+  //   const sqlPattern = /^\s*(SELECT|WITH)\s/i;
+  //   const hasWhere = /\bWHERE\b/i;
+  //   const hasLimit = /\bLIMIT\b/i;
+  //   return (
+  //     sqlPattern.test(query) && hasWhere.test(query) && hasLimit.test(query)
+  //   );
+  // };
 
   const handleSubmit = async () => {
     try {
       setError("");
-      setSuccess("");
-      setLoading(true);
-      setQueryStats(null);
 
-      // Validate query
+      if (!query.trim()) {
+        setError("SQL query cannot be empty.");
+        return;
+      }
+
+      // if (!validateSQL(query)) {
+      //   setError("Please enter a valid SQL SELECT query.");
+      //   return;
+      // }
+
+      // const mockData = [
+      //   { id: 1, name: "Test Data 1", volume: 3 },
+      //   { id: 2, name: "Test Data 2", volume: 5 },
+      // ];
+      // const mockColumns = [
+      //   { field: "id", headerName: "ID", width: 90, fontWeight: "bold" },
+      //   {
+      //     field: "name",
+      //     headerName: "Test Column",
+      //     flex: 1,
+      //     fontWeight: "bold",
+      //   },
+      //   {
+      //     field: "volume",
+      //     headerName: "Volume",
+      //     width: 150,
+      //     fontWeight: "bold",
+      //   },
+      // ];
+
       const validation = SqlApiService.validateQuery(query);
       if (!validation.isValid) {
         setError(validation.error);
         return;
       }
 
-      const startTime = Date.now();
-
-      // Execute query via API
       const result = await SqlApiService.executeQuery(query);
-
-      const endTime = Date.now();
-      const executionTime = endTime - startTime;
-
       if (result.success) {
-        // Limit display to 100 rows
-        const displayRows = result.data.slice(0, 100);
-        const totalRows = result.data.length;
-        const isLimited = totalRows > 100;
-        
-        setRows(displayRows);
+        setRowCount(result.data.length);
+        setRows(result.data);
         setColumns(result.columns);
-        setQueryStats({
-          rowCount: totalRows,
-          displayedRows: displayRows.length,
-          columnCount: result.columns.length,
-          executionTime: executionTime,
-          isLimited: isLimited,
-        });
-        
-        if (isLimited) {
-          setSuccess(`Query executed successfully! Displaying ${displayRows.length} of ${totalRows} rows in ${executionTime}ms`);
-        } else {
-          setSuccess(`Query executed successfully! Retrieved ${totalRows} rows in ${executionTime}ms`);
-        }
-      } else {
-        setError(result.error);
-        setRows([]);
-        setColumns([]);
       }
+
+      // setRows(filteredRows);
+      // setColumns(filteredColumns);
     } catch (err) {
-      console.error("Query execution error:", err);
-      setError("An unexpected error occurred while executing the query.");
-      setRows([]);
-      setColumns([]);
-    } finally {
-      setLoading(false);
+      console.log("Query error: ", err);
+      setError(err.message);
     }
   };
 
@@ -248,20 +248,15 @@ const EnhancedSelfService = () => {
     setRows([]);
     setColumns([]);
     setError("");
-    setSuccess("");
-    setQueryStats(null);
   };
 
   const handleDownloadCSV = () => {
     try {
-      if (!rows.length && !queryStats?.rowCount) {
+      if (!rows.length) {
         setError("No data available to download.");
         return;
       }
 
-      // For CSV download, we need to use the original full dataset, not just displayed rows
-      // Since we only store displayed rows, we'll need to re-fetch or store full data
-      // For now, let's use the displayed data but show a note if limited
       const csvData = rows.map((row) => {
         const rowData = {};
         columns.forEach((col) => {
@@ -272,22 +267,11 @@ const EnhancedSelfService = () => {
 
       const worksheet = XLSX.utils.json_to_sheet(csvData);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Query_Results");
-      
-      // Generate filename with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      const filename = `query_results_${timestamp}.csv`;
-      
-      XLSX.writeFile(workbook, filename);
-      
-      if (queryStats?.isLimited) {
-        setSuccess(`Downloaded ${rows.length} displayed rows as ${filename}. Note: This contains only the first 100 rows shown in the table.`);
-      } else {
-        setSuccess(`Data exported successfully as ${filename}`);
-      }
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+      XLSX.writeFile(workbook, "adhoc_query_result.csv");
     } catch (err) {
-      console.error("Download Failed:", err);
-      setError("Something went wrong while downloading the file.");
+      console.log("Download Failed: ", err);
+      setError("Somethinh went wrong while downloading the file.");
     }
   };
 
@@ -322,7 +306,6 @@ const EnhancedSelfService = () => {
       sx={{ width: "100vw", height: "100vh", paddingTop: 4 }}
     >
       <Box sx={{ display: "flex", height: "100%" }}>
-        {/* Database Explorer Panel */}
         <Box
           sx={{
             width: "20%",
@@ -458,12 +441,9 @@ const EnhancedSelfService = () => {
             );
           })}
         </Box>
-
-        {/* Main Content Panel */}
         <Box
           sx={{ width: "80%", pl: 2, display: "flex", flexDirection: "column" }}
         >
-          {/* Header */}
           <Box
             sx={{
               display: "flex",
@@ -476,7 +456,7 @@ const EnhancedSelfService = () => {
               variant="h4"
               sx={{ color: "#2e86c1", fontWeight: "bold" }}
             >
-              FM-MIS Self Service (Enhanced)
+              FM-MIS Self Service
             </Typography>
             <Box sx={{ display: "flex", gap: 1 }}>
               <Button
@@ -486,58 +466,29 @@ const EnhancedSelfService = () => {
               >
                 Logout
               </Button>
-              <Button 
-                variant="contained" 
-                onClick={handleDownloadCSV}
-                disabled={!rows.length}
-              >
+              <Button variant="contained" onClick={handleDownloadCSV}>
                 <DownloadIcon />
               </Button>
             </Box>
           </Box>
 
-          {/* Query Editor Section */}
           <Box
             sx={{
               display: "flex",
               gap: 2,
-              mb: 2,
+              mb: 4,
               boxShadow: 8,
               padding: "30px",
               borderRadius: 1,
             }}
           >
-            <Box sx={{ width: "100%" }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
-                <Typography
-                  variant="subtitle1"
-                  sx={{ fontWeight: "bold" }}
-                >
-                  Enter SQL Query
-                </Typography>
-                {queryStats && (
-                  <Box sx={{ display: "flex", gap: 1 }}>
-                    <Chip 
-                      icon={<InfoIcon />} 
-                      label={queryStats.isLimited ? `${queryStats.displayedRows}/${queryStats.rowCount} rows` : `${queryStats.rowCount} rows`}
-                      size="small" 
-                      color={queryStats.isLimited ? "warning" : "primary"}
-                    />
-                    <Chip 
-                      icon={<InfoIcon />} 
-                      label={`${queryStats.columnCount} columns`} 
-                      size="small" 
-                      color="secondary" 
-                    />
-                    <Chip 
-                      icon={<InfoIcon />} 
-                      label={`${queryStats.executionTime}ms`} 
-                      size="small" 
-                      color="success" 
-                    />
-                  </Box>
-                )}
-              </Box>
+            <Box sx={{ maxWidth: "false", width: "100%" }}>
+              <Typography
+                variant="subtitle1"
+                sx={{ mb: 1, fontWeight: "bold" }}
+              >
+                Enter SQL Query
+              </Typography>
               <div ref={editorRef}>
                 <SimpleCodeEditor
                   value={query}
@@ -546,7 +497,7 @@ const EnhancedSelfService = () => {
                     Prism.highlight(code, Prism.languages.sql, "sql")
                   }
                   padding={16}
-                  placeholder="Enter SQL query (e.g., SELECT * FROM CDU_LAKE.audit_document_details_storage_uat LIMIT 10;)"
+                  placeholder="Enter SQL query"
                   style={{
                     fontFamily: "monospace",
                     fontSize: 16,
@@ -566,8 +517,8 @@ const EnhancedSelfService = () => {
                       }
                       setQuery((prev) => prev + " " + droppedText);
                     } catch (err) {
-                      console.error("Drop Error:", err);
-                      setError("Failed to add dropped text to query");
+                      console.log("Drop Error: ", err);
+                      setError(err);
                     }
                   }}
                   onDragOver={(e) => e.preventDefault()}
@@ -577,85 +528,64 @@ const EnhancedSelfService = () => {
             <Box
               sx={{
                 display: "flex",
-                flexDirection: "column",
                 gap: 2,
                 justifyContent: "center",
                 alignItems: "center",
+                borderRadius: 1,
               }}
             >
               <Button
                 variant="contained"
-                sx={{ bgcolor: "#27ae60", height: "40px", minWidth: "120px" }}
+                sx={{ bgcolor: "#27ae60", height: "40px" }}
                 onClick={handleSubmit}
-                disabled={loading || !query.trim()}
-                startIcon={loading ? <CircularProgress size={20} /> : <PlayArrowIcon />}
               >
-                {loading ? "Running..." : "Execute"}
+                <CheckIcon />
               </Button>
               <Button
                 variant="contained"
-                sx={{ bgcolor: "#e74c3c", height: "40px", minWidth: "120px" }}
+                sx={{ bgcolor: "#e74c3c", height: "40px" }}
                 onClick={handleClear}
-                disabled={loading}
-                startIcon={<ClearIcon />}
               >
-                Clear
+                <ClearIcon />
               </Button>
             </Box>
           </Box>
 
-          {/* Status Messages */}
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ mb: 4 }}>
               {error}
             </Alert>
           )}
 
-          {success && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              {success}
-            </Alert>
-          )}
-
-          {queryStats && queryStats.isLimited && (
+          {(rowCount>100) && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              Displaying only 100 rows out of {queryStats.rowCount} total rows. Download the CSV to get the complete dataset.
+              Displaying only 100 rows out of {rowCount} total rows. Download the CSV to get the complete dataset.
             </Alert>
           )}
 
-          {/* Results Section */}
-          <Box sx={{ boxShadow: 8, padding: "30px", flex: 1, minHeight: 0 }}>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: "bold" }}>
-              Query Results:
+          <Box sx={{ boxShadow: 8, padding: "30px", height: "auto" }}>
+            <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
+              Query Result:
             </Typography>
-            <Box sx={{ height: "100%", minHeight: "400px" }}>
-              <DataGrid
-                rows={rows}
-                columns={columns}
-                pageSize={25}
-                rowsPerPageOptions={[10, 25, 50, 100]}
-                checkboxSelection
-                disableSelectionOnClick
-                loading={loading}
-                filterMode="client"
-                sx={{
-                  "& .MuiDataGrid-columnHeaders": {
-                    fontWeight: "bold",
-                    backgroundColor: "#f5f5f5",
-                  },
-                  "& .MuiDataGrid-columnHeaderTitle": {
-                    fontWeight: "bold",
-                  },
-                  "& .MuiDataGrid-footerContainer": {
-                    fontWeight: "bold",
-                  },
-                  height: "100%",
-                }}
-                localeText={{
-                  noRowsLabel: loading ? "Executing query..." : "No data to display. Execute a query to see results.",
-                }}
-              />
-            </Box>
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              pageSize={5}
+              rowsPerPageOptions={[5, 10, 20]}
+              filterMode="client"
+              sx={{
+                "& .MuiDataGrid-columnHeaders": {
+                  fontWeight: "bold",
+                },
+                "& .MuiDataGrid-columnHeaderTitle": {
+                  fontWeight: "bold",
+                },
+                "& .MuiDataGrid-footerContainer": {
+                  fontWeight: "bold",
+                },
+                height: "auto",
+              }}
+            />
           </Box>
         </Box>
       </Box>
@@ -663,4 +593,4 @@ const EnhancedSelfService = () => {
   );
 };
 
-export default EnhancedSelfService;
+export default SelfService;
