@@ -1,257 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { Container, Box, Typography, Button } from "@mui/material";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../Login/AuthContext.js";
-import { SqlApiService } from "../../app-container/services/SqlApiService.js";
-import DatabaseTree from "./components/DatabaseTree";
-import QueryEditor from "./components/QueryEditor";
-import ResultsGrid from "./components/ResultsGrid";
-
-const SelfService = () => {
-  const [query, setQuery] = useState("");
-  const [rows, setRows] = useState([]);
-  const [fullRows, setFullRows] = useState([]);
-  const [columns, setColumns] = useState([]);
-  const [rowCount, setRowCount] = useState();
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [dbStructure, setDbStructure] = useState([
-    {
-      name: "SCI",
-      schemas: [
-        {
-          name: "P52LESUBPROFILE",
-          tableColumns: [],
-        },
-        {
-          name: "P119LMPREGULATORYINFO",
-          tableColumns: [],
-        },
-      ],
-    },
-    {
-      name: "CDU_LAKE",
-      schemas: [
-        {
-          name: "audit_document_details_storage_uat",
-          tableColumns: [],
-        },
-        {
-          name: "termsheets_storage",
-          tableColumns: [],
-        },
-      ],
-    },
-  ]);
-
-  const { logout, userRole } = useAuth();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const fetchColumns = async () => {
-      const updatedStructure = await Promise.all(
-        dbStructure.map(async (db) => {
-          const updatedSchema = await Promise.all(
-            db.schemas.map(async (schema) => {
-              try {
-                const url = `https://dqslcdpuat.uk.standardchartered.com/dqsl/query/status?table=${db.name}.${schema.name}&showFields=true`;
-                const response = await axios.get(url);
-                const fields = response?.data[0].columns || [];
-                return {
-                  ...schema,
-                  tableColumns: fields,
-                };
-              } catch (err) {
-                console.log("Failed to fetch columns");
-                return {
-                  ...schema,
-                  tableColumns: [],
-                };
-              }
-            })
-          );
-          return {
-            ...db,
-            schemas: updatedSchema,
-          };
-        })
-      );
-      setDbStructure(updatedStructure);
-    };
-    fetchColumns();
-  }, []);
-
-  const handleSubmit = async () => {
-    try {
-      setError("");
-      setIsLoading(true);
-
-      if (!query.trim()) {
-        setError("SQL query cannot be empty.");
-        setIsLoading(false);
-        return;
-      }
-
-      const validation = SqlApiService.validateQuery(query);
-      if (!validation.isValid) {
-        setError(validation.error);
-        setIsLoading(false);
-        return;
-      }
-
-      const result = await SqlApiService.executeQuery(query);
-      if (result.success) {
-        setRowCount(result.data.length);
-        setFullRows(result.data);
-        setRows(result.data.slice(0, 100));
-        setColumns(result.columns);
-      } else {
-        setError(result.error + "Unable to fetch data");
-        setRows([]);
-        setColumns([]);
-      }
-    } catch (err) {
-      console.log("Query error: ", err);
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleClear = () => {
-    setQuery("");
-    setRows([]);
-    setColumns([]);
-    setError("");
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      setError(error.message);
-    }
-  };
-
-  const handleGenerateChart = () => {
-    if (rows.length === 0 || columns.length === 0) return;
-
-    navigate("/self-service-chart", {
-      state: {
-        rows,
-        columns,
-      },
-    });
-  };
-
-  const insertAtQuery = (insertText) => {
-    const textArea = document.querySelector("textarea");
-    if (!textArea) return;
-
-    const start = textArea.selectionStart;
-    const end = textArea.selectionEnd;
-
-    const newQuery =
-      query.substring(0, start) + insertText + query.substring(end);
-
-    setQuery(newQuery);
-
-    requestAnimationFrame(() => {
-      textArea.focus();
-      textArea.selectionStart = textArea.selectionEnd =
-        start + insertText.length;
-    });
-  };
-
-  return (
-    <Container
-      maxWidth={false}
-      sx={{ width: "100vw", height: "100vh", paddingTop: 4 }}
-    >
-      <Box sx={{ display: "flex", height: "100%" }}>
-        {/* Left Sidebar - Database Tree */}
-        <Box
-          sx={{
-            width: "20%",
-            pr: 2,
-            borderRight: "1px solid #ccc",
-            overflowY: "auto",
-            height: "100vh",
-          }}
-        >
-          <DatabaseTree
-            dbStructure={dbStructure}
-            onInsertAtQuery={insertAtQuery}
-          />
-        </Box>
-
-        {/* Main Content Area */}
-        <Box
-          sx={{ width: "80%", pl: 2, display: "flex", flexDirection: "column" }}
-        >
-          {/* Header */}
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              mb: 2,
-            }}
-          >
-            <Typography
-              variant="h4"
-              sx={{ color: "#2e86c1", fontWeight: "bold" }}
-            >
-              Self Service
-            </Typography>
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <Button
-                variant="contained"
-                onClick={handleLogout}
-                sx={{ bgcolor: "red" }}
-              >
-                Logout
-              </Button>
-            </Box>
-          </Box>
-
-          {/* Query Editor */}
-          <QueryEditor
-            query={query}
-            setQuery={setQuery}
-            onSubmit={handleSubmit}
-            onClear={handleClear}
-            isLoading={isLoading}
-            error={error}
-          />
-
-          {/* Results Grid */}
-          <ResultsGrid
-            rows={rows}
-            fullRows={fullRows}
-            columns={columns}
-            rowCount={rowCount}
-            isLoading={isLoading}
-            error={error}
-            userRole={userRole}
-            onGenerateChart={handleGenerateChart}
-          />
-        </Box>
-      </Box>
-    </Container>
-  );
-};
-
-export default SelfService;
-
-
-
-
-
-
-
-
-import React, { useState, useEffect } from "react";
 import {
   Typography,
   Box,
@@ -260,8 +7,10 @@ import {
   AccordionDetails,
   TextField,
   Tooltip,
+  InputAdornment,
 } from "@mui/material";
 import { ExpandMore } from "@mui/icons-material";
+import SearchIcon from "@mui/icons-material/Search";
 import StorageIcon from "@mui/icons-material/Storage";
 import SchemaIcon from "@mui/icons-material/Schema";
 import AbcIcon from "@mui/icons-material/Abc";
@@ -337,12 +86,26 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
   }, [searchTerm, dbStructure]);
 
   return (
-    <>
+    <Box
+      sx={{
+        boxShadow: 3,
+        borderRadius: 3,
+        p: 3,
+        backgroundColor: "#fff",
+        maxHeight: "80vh",
+        overflowY: "auto",
+      }}
+    >
       <Typography
-        variant="h6"
-        sx={{ color: "#2e86c1", fontWeight: "bold", mb: 2 }}
+        variant="h5"
+        sx={{
+          fontWeight: "bold",
+          color: "#1a1a1a",
+          fontFamily: "Ekarta Medium, sans-serif",
+          mb: 2,
+        }}
       >
-        Databases
+        Database Browser
       </Typography>
 
       <TextField
@@ -352,6 +115,18 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
         placeholder="Search DB, Schema, Table..."
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
+        InputProps={{
+          sx: {
+            borderRadius: 2,
+            backgroundColor: "#f9f9f9",
+            fontFamily: "inherit",
+          },
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon sx={{ color: "#757575" }} />
+            </InputAdornment>
+          ),
+        }}
         sx={{ mb: 2 }}
       />
 
@@ -363,9 +138,18 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
             key={dbIndex}
             expanded={isDBExpanded}
             onChange={() => handleToggleDB(dbIndex)}
+            sx={{
+              borderRadius: 2,
+              backgroundColor: "#f8faff",
+              mb: 1,
+              "&:before": { display: "none" },
+              "& .MuiAccordionSummary-root:hover": {
+                backgroundColor: "#eaf4fe",
+              },
+            }}
           >
             <AccordionSummary expandIcon={<ExpandMore />}>
-              <Box sx={{ display: "flex", gap: 2 }}>
+              <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
                 <SchemaIcon sx={{ color: "#8e44ad" }} />
                 <Typography
                   draggable
@@ -373,7 +157,16 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
                     e.dataTransfer.setData("text/plain", db.name)
                   }
                   onDoubleClick={() => onInsertAtQuery(db.name)}
-                  sx={{ fontWeight: "bold", cursor: "grab" }}
+                  sx={{
+                    fontWeight: 500,
+                    cursor: "grab",
+                    fontFamily: "inherit",
+                    "&:hover": {
+                      textDecoration: "underline",
+                      color: "#0473ea",
+                    },
+                    ...ellipsisText,
+                  }}
                 >
                   {db.name}
                 </Typography>
@@ -390,10 +183,19 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
                     key={schemaKey}
                     expanded={isSchemaExpanded}
                     onChange={() => handleToggleSchema(dbIndex, schemaIndex)}
-                    sx={{ ml: 2 }}
+                    sx={{
+                      ml: 2,
+                      borderRadius: 2,
+                      backgroundColor: "#fdfdfd",
+                      boxShadow: "inset 0 0 0 1px #e0e0e0",
+                      mb: 1,
+                      "& .MuiAccordionSummary-root:hover": {
+                        backgroundColor: "#f2faff",
+                      },
+                    }}
                   >
                     <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Box sx={{ display: "flex", gap: 2 }}>
+                      <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
                         <StorageIcon sx={{ color: "#27ae60" }} />
                         <Tooltip title={schema.name}>
                           <Typography
@@ -407,7 +209,15 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
                             onDoubleClick={() =>
                               onInsertAtQuery(`${db.name}.${schema.name}`)
                             }
-                            sx={{ cursor: "grab", ...ellipsisText }}
+                            sx={{
+                              cursor: "grab",
+                              fontFamily: "inherit",
+                              "&:hover": {
+                                textDecoration: "underline",
+                                color: "#0473ea",
+                              },
+                              ...ellipsisText,
+                            }}
                           >
                             {schema.name}
                           </Typography>
@@ -423,9 +233,11 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
                               display: "flex",
                               alignItems: "center",
                               gap: 2,
+                              ml: 4,
+                              my: 0.5,
                             }}
                           >
-                            <AbcIcon sx={{ color: "#2e86c1" }} />
+                            <AbcIcon sx={{ color: "#2e86c1", fontSize: 20 }} />
                             <Tooltip title={table}>
                               <Typography
                                 draggable
@@ -441,9 +253,12 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
                                   )
                                 }
                                 sx={{
-                                  ml: 2,
-                                  py: 0.5,
                                   cursor: "grab",
+                                  fontFamily: "inherit",
+                                  "&:hover": {
+                                    textDecoration: "underline",
+                                    color: "#0473ea",
+                                  },
                                   ...ellipsisText,
                                 }}
                               >
@@ -461,274 +276,8 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
           </Accordion>
         );
       })}
-    </>
+    </Box>
   );
 };
 
 export default DatabaseTree;
-
-
-
-
-
-
-
-
-
-
-
-import React, { useRef, useEffect } from "react";
-import {
-  Typography,
-  Button,
-  Box,
-  Alert,
-  CircularProgress,
-} from "@mui/material";
-import CheckIcon from "@mui/icons-material/Check";
-import ClearIcon from "@mui/icons-material/Clear";
-import SimpleCodeEditor from "react-simple-code-editor";
-import Prism from "prismjs";
-import "prismjs/components/prism-sql";
-import "prismjs/themes/prism.css";
-
-const QueryEditor = ({
-  query,
-  setQuery,
-  onSubmit,
-  onClear,
-  isLoading,
-  error,
-}) => {
-  const editorRef = useRef(null);
-  const textareaRef = useRef(null);
-
-  useEffect(() => {
-    if (editorRef.current) {
-      textareaRef.current = editorRef.current.querySelector("textarea");
-    }
-  }, []);
-
-  const handleDrop = (e) => {
-    try {
-      e.preventDefault();
-      const droppedText = e.dataTransfer.getData("text/plain");
-      if (!droppedText) {
-        throw new Error("Invalid data dropped");
-      }
-      setQuery((prev) => prev + " " + droppedText);
-    } catch (err) {
-      console.log("Drop Error: ", err);
-    }
-  };
-
-  return (
-    <>
-      <Box
-        sx={{
-          display: "flex",
-          gap: 2,
-          mb: 4,
-          boxShadow: 8,
-          padding: "30px",
-          borderRadius: 1,
-        }}
-      >
-        <Box sx={{ maxWidth: "false", width: "100%" }}>
-          <Typography
-            variant="subtitle1"
-            sx={{ mb: 1, fontWeight: "bold" }}
-          >
-            Enter SQL Query
-          </Typography>
-          <div ref={editorRef}>
-            <SimpleCodeEditor
-              value={query}
-              onValueChange={(code) => setQuery(code)}
-              highlight={(code) =>
-                Prism.highlight(code, Prism.languages.sql, "sql")
-              }
-              padding={16}
-              placeholder="Enter SQL query"
-              style={{
-                fontFamily: "monospace",
-                fontSize: 16,
-                border: "1px solid #ccc",
-                borderRadius: 4,
-                backgroundColor: "#f9f9f9",
-                minHeight: "150px",
-                width: "auto",
-                whiteSpace: "pre-wrap",
-              }}
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-            />
-          </div>
-        </Box>
-        <Box
-          sx={{
-            display: "flex",
-            gap: 2,
-            justifyContent: "center",
-            alignItems: "center",
-            borderRadius: 1,
-          }}
-        >
-          <Button
-            variant="contained"
-            sx={{ bgcolor: "#27ae60", height: "40px" }}
-            onClick={onSubmit}
-            disabled={isLoading}
-          >
-            <CheckIcon />
-          </Button>
-          <Button
-            variant="contained"
-            sx={{ bgcolor: "#e74c3c", height: "40px" }}
-            onClick={onClear}
-            disabled={isLoading}
-          >
-            <ClearIcon />
-          </Button>
-        </Box>
-      </Box>
-
-      {isLoading && (
-        <Box sx={{ display: "flex", justifyContent: "center", my: 2 }}>
-          <CircularProgress />
-          <Typography variant="body1" sx={{ ml: 2 }}>
-            Executing query...
-          </Typography>
-        </Box>
-      )}
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 4 }}>
-          {error}
-        </Alert>
-      )}
-    </>
-  );
-};
-
-export default QueryEditor;
-
-
-
-
-
-
-
-
-
-
-
-
-
-import React from "react";
-import {
-  Typography,
-  Button,
-  Box,
-  Alert,
-} from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
-import * as XLSX from "xlsx";
-import DownloadIcon from "@mui/icons-material/Download";
-
-const ResultsGrid = ({
-  rows,
-  fullRows,
-  columns,
-  rowCount,
-  isLoading,
-  error,
-  userRole,
-  onGenerateChart,
-}) => {
-  const handleDownloadCSV = () => {
-    try {
-      if (!fullRows.length) {
-        console.error("No data available to download.");
-        return;
-      }
-
-      const csvData = fullRows.map((row) => {
-        const rowData = {};
-        columns.forEach((col) => {
-          rowData[col.headerName] = row[col.field];
-        });
-        return rowData;
-      });
-
-      const worksheet = XLSX.utils.json_to_sheet(csvData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-      XLSX.writeFile(workbook, "adhoc_query_result.csv");
-    } catch (err) {
-      console.log("Download Failed: ", err);
-    }
-  };
-
-  if (isLoading) {
-    return null; // Loading is handled in QueryEditor
-  }
-
-  return (
-    <>
-      {rowCount > 100 && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Displaying only 100 rows out of {rowCount} total rows. Download
-          the CSV to get the complete dataset.
-        </Alert>
-      )}
-
-      <Box sx={{ boxShadow: 8, padding: "30px", height: "auto" }}>
-        <Box
-          sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}
-        >
-          <Typography variant="h6" sx={{ fontWeight: "bold" }}>
-            Query Result:
-          </Typography>
-          <Box sx={{ display: "flex", gap: 1 }}>
-            {rows.length !== 0 && columns.length !== 0 && (
-              <Button variant="contained" onClick={onGenerateChart}>
-                Generate Chart
-              </Button>
-            )}
-            {userRole === "Read&DownloadRole" && (
-              <Button
-                variant="contained"
-                onClick={handleDownloadCSV}
-                disabled={isLoading || !fullRows.length}
-              >
-                <DownloadIcon />
-              </Button>
-            )}
-          </Box>
-        </Box>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          pageSize={5}
-          rowsPerPageOptions={[5, 10, 20]}
-          filterMode="client"
-          sx={{
-            "& .MuiDataGrid-columnHeaders": {
-              fontWeight: "bold",
-            },
-            "& .MuiDataGrid-columnHeaderTitle": {
-              fontWeight: "bold",
-            },
-            "& .MuiDataGrid-footerContainer": {
-              fontWeight: "bold",
-            },
-            height: "auto",
-          }}
-        />
-      </Box>
-    </>
-  );
-};
-
-export default ResultsGrid;
