@@ -8,9 +8,9 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  Divider,
   TextField,
   Tooltip,
+  CircularProgress,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import * as XLSX from "xlsx";
@@ -25,16 +25,19 @@ import SimpleCodeEditor from "react-simple-code-editor";
 import Prism from "prismjs";
 import "prismjs/components/prism-sql";
 import "prismjs/themes/prism.css";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "../Login/AuthContext.js";
 import axios from "axios";
-import { SqlApiService } from "./services/SqlApiService";
+import { SqlApiService } from "../../app-container/services/SqlApiService.js";
+import { useNavigate } from "react-router-dom";
 
 const SelfService = () => {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState([]);
+  const [fullRows, setFullRows] = useState([]);
   const [columns, setColumns] = useState([]);
   const [rowCount, setRowCount] = useState();
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedDBs, setExpandedDBs] = useState(new Set());
   const [expandedSchemas, setExpandedSchemas] = useState(new Set());
@@ -68,6 +71,7 @@ const SelfService = () => {
   ]);
   const editorRef = useRef(null);
   const textareaRef = useRef(null);
+  const navigate = useNavigate();
 
   const ellipsisText = {
     maxWidth: "140px",
@@ -114,7 +118,7 @@ const SelfService = () => {
   }, []);
 
   const getSchemaKey = (dbIndex, schemaIndex) => `${dbIndex}-${schemaIndex}`;
-  const { logout } = useAuth();
+  const { logout, userRole } = useAuth();
 
   const handleToggleDB = (dbIndex) => {
     setExpandedDBs((prev) => {
@@ -158,7 +162,7 @@ const SelfService = () => {
         const schemaMatch = schema.name
           .toLowerCase()
           .includes(searchTerm.toLowerCase());
-        const tableMatch = schema.tables.some((table) =>
+        const tableMatch = schema.tableColumns.some((table) =>
           table.toLowerCase().includes(searchTerm.toLowerCase())
         );
 
@@ -179,26 +183,46 @@ const SelfService = () => {
     setExpandedSchemas(schemas);
   }, [searchTerm]);
 
-  // const validateSQL = (query) => {
-  //   const sqlPattern = /^\s*(SELECT|WITH)\s/i;
-  //   const hasWhere = /\bWHERE\b/i;
-  //   const hasLimit = /\bLIMIT\b/i;
-  //   return (
-  //     sqlPattern.test(query) && hasWhere.test(query) && hasLimit.test(query)
-  //   );
-  // };
+  const validateSQL = (query) => {
+    const normalized = query.trim().replace(/\s+/g, " ").toUpperCase();
+
+    const startsWithSelectOrWith = /^SELECT\s|^WITH\s/.test(normalized);
+    const hasFrom = /\bFROM\b/.test(normalized);
+    const hasWhere = /\bWHERE\b/.test(normalized);
+    const hasLimit = /\bLIMIT\b/.test(normalized);
+
+    const fromIndex = normalized.indexOf("FROM");
+    const whereIndex = normalized.indexOf("WHERE");
+    const limitIndex = normalized.indexOf("LIMIT");
+
+    const afterWhere = normalized.slice(whereIndex + 5).trim();
+    const invalidWhere = !afterWhere || afterWhere.startsWith("LIMIT");
+
+    return (
+      startsWithSelectOrWith &&
+      hasFrom &&
+      hasWhere &&
+      hasLimit &&
+      fromIndex < whereIndex &&
+      whereIndex < limitIndex &&
+      !invalidWhere
+    );
+  };
 
   const handleSubmit = async () => {
     try {
       setError("");
+      setIsLoading(true);
 
       if (!query.trim()) {
         setError("SQL query cannot be empty.");
+        setIsLoading(false);
         return;
       }
 
       // if (!validateSQL(query)) {
       //   setError("Please enter a valid SQL SELECT query.");
+      //   setIsLoading(false);
       //   return;
       // }
 
@@ -225,21 +249,26 @@ const SelfService = () => {
       const validation = SqlApiService.validateQuery(query);
       if (!validation.isValid) {
         setError(validation.error);
+        setIsLoading(false);
         return;
       }
 
       const result = await SqlApiService.executeQuery(query);
       if (result.success) {
         setRowCount(result.data.length);
-        setRows(result.data);
+        setFullRows(result.data);
+        setRows(result.data.slice(0, 100));
         setColumns(result.columns);
+      } else {
+        setError(result.error + "Unable to fetch data");
+        setRows([]);
+        setColumns([]);
       }
-
-      // setRows(filteredRows);
-      // setColumns(filteredColumns);
     } catch (err) {
       console.log("Query error: ", err);
       setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -252,12 +281,12 @@ const SelfService = () => {
 
   const handleDownloadCSV = () => {
     try {
-      if (!rows.length) {
+      if (!fullRows.length) {
         setError("No data available to download.");
         return;
       }
 
-      const csvData = rows.map((row) => {
+      const csvData = fullRows.map((row) => {
         const rowData = {};
         columns.forEach((col) => {
           rowData[col.headerName] = row[col.field];
@@ -297,6 +326,17 @@ const SelfService = () => {
       textArea.focus();
       textArea.selectionStart = textArea.selectionEnd =
         start + insertText.length;
+    });
+  };
+
+  const handleGenerateChart = () => {
+    if (rows.length === 0 || columns.length === 0) return;
+
+    navigate("/self-service-chart", {
+      state: {
+        rows,
+        columns,
+      },
     });
   };
 
@@ -456,7 +496,7 @@ const SelfService = () => {
               variant="h4"
               sx={{ color: "#2e86c1", fontWeight: "bold" }}
             >
-              FM-MIS Self Service
+              Self Service
             </Typography>
             <Box sx={{ display: "flex", gap: 1 }}>
               <Button
@@ -466,9 +506,16 @@ const SelfService = () => {
               >
                 Logout
               </Button>
-              <Button variant="contained" onClick={handleDownloadCSV}>
-                <DownloadIcon />
-              </Button>
+              {(userRole === "Read&DownloadRole") &&
+              (
+                <Button
+                  variant="contained"
+                  onClick={handleDownloadCSV}
+                  disabled={isLoading}
+                >
+                  <DownloadIcon />
+                </Button>
+              )}
             </Box>
           </Box>
 
@@ -538,6 +585,7 @@ const SelfService = () => {
                 variant="contained"
                 sx={{ bgcolor: "#27ae60", height: "40px" }}
                 onClick={handleSubmit}
+                disabled={isLoading}
               >
                 <CheckIcon />
               </Button>
@@ -545,11 +593,21 @@ const SelfService = () => {
                 variant="contained"
                 sx={{ bgcolor: "#e74c3c", height: "40px" }}
                 onClick={handleClear}
+                disabled={isLoading}
               >
                 <ClearIcon />
               </Button>
             </Box>
           </Box>
+
+          {isLoading && (
+            <Box sx={{ display: "flex", justifyContent: "center", my: 2 }}>
+              <CircularProgress />
+              <Typography variant="body1" sx={{ ml: 2 }}>
+                Executing query...
+              </Typography>
+            </Box>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ mb: 4 }}>
@@ -557,16 +615,26 @@ const SelfService = () => {
             </Alert>
           )}
 
-          {(rowCount>100) && (
+          {rowCount > 100 && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              Displaying only 100 rows out of {rowCount} total rows. Download the CSV to get the complete dataset.
+              Displaying only 100 rows out of {rowCount} total rows. Download
+              the CSV to get the complete dataset.
             </Alert>
           )}
 
           <Box sx={{ boxShadow: 8, padding: "30px", height: "auto" }}>
-            <Typography variant="h6" sx={{ mb: 1, fontWeight: "bold" }}>
-              Query Result:
-            </Typography>
+            <Box
+              sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}
+            >
+              <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+                Query Result:
+              </Typography>
+              {rows.length !== 0 && columns.length !== 0 && (
+                <Button variant="contained" onClick={handleGenerateChart}>
+                  Generate Chart
+                </Button>
+              )}
+            </Box>
             <DataGrid
               rows={rows}
               columns={columns}
