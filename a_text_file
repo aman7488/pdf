@@ -1,34 +1,76 @@
 import React, { useState, useEffect } from "react";
 import {
-  Typography,
   Box,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Collapse,
+  IconButton,
+  Tooltip,
+  TextField,
+  InputAdornment,
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  TextField,
-  Tooltip,
-  InputAdornment,
 } from "@mui/material";
-import { ExpandMore } from "@mui/icons-material";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import ExpandLess from "@mui/icons-material/ExpandLess";
+import ExpandMore from "@mui/icons-material/ExpandMore";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import PieChartIcon from "@mui/icons-material/PieChart";
+import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import SearchIcon from "@mui/icons-material/Search";
 import StorageIcon from "@mui/icons-material/Storage";
 import SchemaIcon from "@mui/icons-material/Schema";
 import AbcIcon from "@mui/icons-material/Abc";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../pages/Login/AuthContext";
+import LogoutIcon from "@mui/icons-material/Logout";
 
-const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
+const allBoxes = [
+  { title: "FMO Trade Volume", image: "/db1.png", route: "/dashboard" },
+  { title: "Settlement", image: "/db2.jpg", route: "/dashboard" },
+  { title: "Margin Operations", image: "/db3.png", route: "/dashboard" },
+  { title: "Middle Office", image: "/db1.png", route: "/dashboard" },
+  { title: "Confirmation", image: "/db2.jpg", route: "/dashboard" },
+  { title: "Reg Ops Volumetric", image: "/db3.png", route: "/dashboard" },
+  { title: "GEMS", image: "/selfService.png", route: "/dashboard" },
+];
+
+const CombinedNavbarDatabase = ({ dbStructure, onInsertAtQuery, sidebarWidth, setSidebarWidth, isResizing, setIsResizing }) => {
+  const [openDashboards, setOpenDashboards] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedDBs, setExpandedDBs] = useState(new Set());
   const [expandedSchemas, setExpandedSchemas] = useState(new Set());
+  
+  const navigate = useNavigate();
+  const userId = sessionStorage.getItem("user_id");
+  const { logout } = useAuth();
 
   const ellipsisText = {
-    maxWidth: "140px",
+    flex: 1,
+    minWidth: 0,
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    display: "inline-block",
   };
 
   const getSchemaKey = (dbIndex, schemaIndex) => `${dbIndex}-${schemaIndex}`;
+
+  const handleDashboardClick = () => setOpenDashboards(!openDashboards);
+  const dashboardItems = allBoxes;
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.log(error.message);
+    }
+  };
 
   const handleToggleDB = (dbIndex) => {
     setExpandedDBs((prev) => {
@@ -88,196 +130,453 @@ const DatabaseTree = ({ dbStructure, onInsertAtQuery }) => {
   return (
     <Box
       sx={{
-        boxShadow: 3,
-        borderRadius: 3,
-        p: 3,
-        backgroundColor: "#fff",
-        maxHeight: "80vh",
+        display: "flex",
+        flexDirection: "column",
+        width: isCollapsed ? "80px" : sidebarWidth,
+        transition: "width 0.3s",
+        height: "100vh",
+        boxShadow: 10,
+        bgcolor: "#ffffff",
         overflowY: "auto",
+        position: "relative",
+        scrollbarWidth: "none",
+        "&::-webkit-scrollbar": {
+          display: "none",
+        },
       }}
     >
-      <Typography
-        variant="h5"
+      {/* Collapse/Expand Button */}
+      <IconButton
+        onClick={() => setIsCollapsed(!isCollapsed)}
         sx={{
-          fontWeight: "bold",
-          color: "#1a1a1a",
-          fontFamily: "Ekarta Medium, sans-serif",
-          mb: 2,
+          position: "absolute",
+          top: 20,
+          right: -20,
+          bgcolor: "#ffffff",
+          border: "1px solid #ccc",
+          zIndex: 2000,
+          borderRadius: "50%",
+          boxShadow: 2,
+          width: "40px",
+          height: "40px",
+          "&:hover": {
+            backgroundColor: "#f5f5f5",
+          },
         }}
       >
-        Database Browser
-      </Typography>
+        {isCollapsed ? <ChevronRightIcon /> : <KeyboardArrowLeftIcon />}
+      </IconButton>
 
-      <TextField
-        fullWidth
-        variant="outlined"
-        size="small"
-        placeholder="Search DB, Schema, Table..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        InputProps={{
-          sx: {
-            borderRadius: 2,
-            backgroundColor: "#f9f9f9",
-            fontFamily: "inherit",
-          },
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon sx={{ color: "#757575" }} />
-            </InputAdornment>
-          ),
+      {/* Logo */}
+      <Box
+        sx={{
+          width: "100%",
+          height: "6vh",
+          margin: "5vh 0px 3vh 0",
+          display: "flex",
+          justifyContent: "center",
         }}
-        sx={{ mb: 2 }}
-      />
+      >
+        <img
+          src="/STANC-logo.png"
+          width={isCollapsed ? "50%" : "10%"}
+          alt="logo"
+        />
+      </Box>
 
-      {dbStructure?.map((db, dbIndex) => {
-        const isDBExpanded = expandedDBs.has(dbIndex);
-
-        return (
-          <Accordion
-            key={dbIndex}
-            expanded={isDBExpanded}
-            onChange={() => handleToggleDB(dbIndex)}
+      {/* User Info */}
+      {!isCollapsed && (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            height: "7vh",
+            width: "100%",
+            bgcolor: "#0473ea",
+            px: 2,
+          }}
+        >
+          <Box
             sx={{
-              borderRadius: 2,
-              backgroundColor: "#f8faff",
-              mb: 1,
-              "&:before": { display: "none" },
-              "& .MuiAccordionSummary-root:hover": {
-                backgroundColor: "#eaf4fe",
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+            }}
+          >
+            <Box
+              component="img"
+              src="avatar.png"
+              alt="User Avatar"
+              sx={{
+                width: "4vh",
+                height: "4vh",
+                borderRadius: "50%",
+                objectFit: "cover",
+                border: "2px solid #e0e0e0",
+              }}
+            />
+            <Typography
+              variant="h6"
+              sx={{
+                fontFamily: "Ekster Medium",
+                color: "#ffffff",
+                fontSize: "2vh",
+                ml: 2,
+              }}
+            >
+              Welcome <span style={{ color: "#38d200" }}>{userId}</span>
+            </Typography>
+          </Box>
+        </Box>
+      )}
+
+      {/* Navigation Section */}
+      <List component="nav" sx={{ mt: 2, flexShrink: 0 }}>
+        {/* Dashboards */}
+        <Tooltip
+          title="Dashboards"
+          placement="right"
+          disableHoverListener={!isCollapsed}
+        >
+          <ListItem
+            button
+            onClick={handleDashboardClick}
+            sx={{
+              position: "relative",
+              cursor: "pointer",
+              "&:hover": {
+                backgroundColor: "#eaf3fc",
+                "&::before": {
+                  content: '""',
+                  position: "absolute",
+                  left: 0,
+                  top: 5,
+                  bottom: 5,
+                  width: "6px",
+                  backgroundColor: "#0473ea",
+                  borderTopRightRadius: "8px",
+                  borderBottomRightRadius: "8px",
+                },
               },
             }}
           >
-            <AccordionSummary expandIcon={<ExpandMore />}>
-              <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                <SchemaIcon sx={{ color: "#8e44ad" }} />
-                <Typography
-                  draggable
-                  onDragStart={(e) =>
-                    e.dataTransfer.setData("text/plain", db.name)
-                  }
-                  onDoubleClick={() => onInsertAtQuery(db.name)}
-                  sx={{
-                    fontWeight: 500,
-                    cursor: "grab",
-                    fontFamily: "inherit",
-                    "&:hover": {
-                      textDecoration: "underline",
-                      color: "#0473ea",
+            <ListItemIcon>
+              <DashboardIcon
+                sx={{ color: "#38d200", width: "3.5vh", height: "3.5vh" }}
+              />
+            </ListItemIcon>
+            {!isCollapsed && (
+              <ListItemText
+                primary="Dashboards"
+                primaryTypographyProps={{
+                  fontFamily: "Ekster Medium",
+                  fontSize: "2.4vh",
+                  color: "#0473ea",
+                  ml: "1vw",
+                  mt: "1.5vh",
+                }}
+              />
+            )}
+            {!isCollapsed && (openDashboards ? <ExpandLess /> : <ExpandMore />)}
+          </ListItem>
+        </Tooltip>
+
+        {/* Dashboard Items */}
+        <Collapse
+          in={openDashboards && !isCollapsed}
+          timeout="auto"
+          unmountOnExit
+        >
+          <List component="div" disablePadding sx={{ pl: 4 }}>
+            {dashboardItems.map((item, index) => (
+              <ListItem
+                button
+                key={index}
+                onClick={() =>
+                  navigate(item.route, { state: { title: item.title } })
+                }
+                sx={{
+                  position: "relative",
+                  cursor: "pointer",
+                  "&:hover": {
+                    backgroundColor: "#eaf3fc",
+                    "&::before": {
+                      content: '""',
+                      position: "absolute",
+                      left: 0,
+                      top: 5,
+                      bottom: 5,
+                      width: "6px",
+                      backgroundColor: "#0473ea",
+                      borderTopRightRadius: "8px",
+                      borderBottomRightRadius: "8px",
                     },
-                    ...ellipsisText,
+                  },
+                }}
+              >
+                <ListItemIcon>
+                  {index % 2 === 0 ? (
+                    <BarChartIcon sx={{ color: "#0473ea" }} />
+                  ) : (
+                    <PieChartIcon sx={{ color: "#0473ea" }} />
+                  )}
+                </ListItemIcon>
+                <ListItemText
+                  primary={item.title}
+                  primaryTypographyProps={{
+                    fontFamily: "Ekster Medium",
+                    fontSize: "2vh",
+                    color: "#6d6e70",
+                  }}
+                />
+              </ListItem>
+            ))}
+          </List>
+        </Collapse>
+      </List>
+
+      {/* Database Tree Section */}
+      {!isCollapsed && (
+        <Box
+          sx={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            mt: 2,
+            mx: 2,
+            mb: 2,
+          }}
+        >
+          <Box
+            sx={{
+              flexShrink: 0,
+              p: 2,
+              borderRadius: 2,
+              backgroundColor: "#f8faff",
+              mb: 2,
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: "bold",
+                color: "#1a1a1a",
+                fontFamily: "Ekarta Medium, sans-serif",
+                mb: 2,
+              }}
+            >
+              Databases
+            </Typography>
+
+            <TextField
+              fullWidth
+              variant="outlined"
+              size="small"
+              placeholder="Search DB, Schema, Table..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                sx: {
+                  borderRadius: 2,
+                  backgroundColor: "#ffffff",
+                  fontFamily: "inherit",
+                },
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: "#757575" }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Box>
+
+          <Box
+            sx={{
+              flex: 1,
+              overflowY: "auto",
+              pr: 1,
+              scrollbarGutter: "stable",
+            }}
+          >
+            {dbStructure?.map((db, dbIndex) => {
+              const isDBExpanded = expandedDBs.has(dbIndex);
+
+              return (
+                <Accordion
+                  key={dbIndex}
+                  expanded={isDBExpanded}
+                  onChange={() => handleToggleDB(dbIndex)}
+                  sx={{
+                    borderRadius: 2,
+                    backgroundColor: "#f8faff",
+                    mb: 1,
+                    "&:before": { display: "none" },
+                    "& .MuiAccordionSummary-root:hover": {
+                      backgroundColor: "#eaf4fe",
+                    },
                   }}
                 >
-                  {db.name}
-                </Typography>
-              </Box>
-            </AccordionSummary>
+                  <AccordionSummary expandIcon={<ExpandMore />}>
+                    <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                      <SchemaIcon sx={{ color: "#8e44ad" }} />
+                      <Typography
+                        draggable
+                        onDragStart={(e) =>
+                          e.dataTransfer.setData("text/plain", db.name)
+                        }
+                        onDoubleClick={() => onInsertAtQuery(db.name)}
+                        sx={{
+                          fontWeight: 500,
+                          cursor: "grab",
+                          fontFamily: "inherit",
+                          "&:hover": {
+                            textDecoration: "underline",
+                            color: "#0473ea",
+                          },
+                          ...ellipsisText,
+                        }}
+                      >
+                        {db.name}
+                      </Typography>
+                    </Box>
+                  </AccordionSummary>
 
-            <AccordionDetails>
-              {db?.schemas?.map((schema, schemaIndex) => {
-                const schemaKey = getSchemaKey(dbIndex, schemaIndex);
-                const isSchemaExpanded = expandedSchemas.has(schemaKey);
+                  <AccordionDetails>
+                    {db?.schemas?.map((schema, schemaIndex) => {
+                      const schemaKey = getSchemaKey(dbIndex, schemaIndex);
+                      const isSchemaExpanded = expandedSchemas.has(schemaKey);
 
-                return (
-                  <Accordion
-                    key={schemaKey}
-                    expanded={isSchemaExpanded}
-                    onChange={() => handleToggleSchema(dbIndex, schemaIndex)}
-                    sx={{
-                      ml: 2,
-                      borderRadius: 2,
-                      backgroundColor: "#fdfdfd",
-                      boxShadow: "inset 0 0 0 1px #e0e0e0",
-                      mb: 1,
-                      "& .MuiAccordionSummary-root:hover": {
-                        backgroundColor: "#f2faff",
-                      },
-                    }}
-                  >
-                    <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                        <StorageIcon sx={{ color: "#27ae60" }} />
-                        <Tooltip title={schema.name}>
-                          <Typography
-                            draggable
-                            onDragStart={(e) =>
-                              e.dataTransfer.setData(
-                                "text/plain",
-                                `${db.name}.${schema.name}`
-                              )
-                            }
-                            onDoubleClick={() =>
-                              onInsertAtQuery(`${db.name}.${schema.name}`)
-                            }
-                            sx={{
-                              cursor: "grab",
-                              fontFamily: "inherit",
-                              "&:hover": {
-                                textDecoration: "underline",
-                                color: "#0473ea",
-                              },
-                              ...ellipsisText,
-                            }}
-                          >
-                            {schema.name}
-                          </Typography>
-                        </Tooltip>
-                      </Box>
-                    </AccordionSummary>
+                      return (
+                        <Accordion
+                          key={schemaKey}
+                          expanded={isSchemaExpanded}
+                          onChange={() => handleToggleSchema(dbIndex, schemaIndex)}
+                          sx={{
+                            ml: 2,
+                            borderRadius: 2,
+                            backgroundColor: "#fdfdfd",
+                            boxShadow: "inset 0 0 0 1px #e0e0e0",
+                            mb: 1,
+                            "& .MuiAccordionSummary-root:hover": {
+                              backgroundColor: "#f2faff",
+                            },
+                          }}
+                        >
+                          <AccordionSummary expandIcon={<ExpandMore />}>
+                            <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                              <StorageIcon sx={{ color: "#27ae60" }} />
+                              <Tooltip title={schema.name}>
+                                <Typography
+                                  draggable
+                                  onDragStart={(e) =>
+                                    e.dataTransfer.setData(
+                                      "text/plain",
+                                      `${db.name}.${schema.name}`
+                                    )
+                                  }
+                                  onDoubleClick={() =>
+                                    onInsertAtQuery(`${db.name}.${schema.name}`)
+                                  }
+                                  sx={{
+                                    cursor: "grab",
+                                    fontFamily: "inherit",
+                                    "&:hover": {
+                                      textDecoration: "underline",
+                                      color: "#0473ea",
+                                    },
+                                    ...ellipsisText,
+                                  }}
+                                >
+                                  {schema.name}
+                                </Typography>
+                              </Tooltip>
+                            </Box>
+                          </AccordionSummary>
 
-                    <AccordionDetails>
-                      {schema?.tableColumns?.map((table, tableIndex) => (
-                        <Box key={tableIndex}>
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 2,
-                              ml: 4,
-                              my: 0.5,
-                            }}
-                          >
-                            <AbcIcon sx={{ color: "#2e86c1", fontSize: 20 }} />
-                            <Tooltip title={table}>
-                              <Typography
-                                draggable
-                                onDragStart={(e) =>
-                                  e.dataTransfer.setData(
-                                    "text/plain",
-                                    `${db.name}.${schema.name}.${table}`
-                                  )
-                                }
-                                onDoubleClick={() =>
-                                  onInsertAtQuery(
-                                    `${db.name}.${schema.name}.${table}`
-                                  )
-                                }
-                                sx={{
-                                  cursor: "grab",
-                                  fontFamily: "inherit",
-                                  "&:hover": {
-                                    textDecoration: "underline",
-                                    color: "#0473ea",
-                                  },
-                                  ...ellipsisText,
-                                }}
-                              >
-                                {table}
-                              </Typography>
-                            </Tooltip>
-                          </Box>
-                        </Box>
-                      ))}
-                    </AccordionDetails>
-                  </Accordion>
-                );
-              })}
-            </AccordionDetails>
-          </Accordion>
-        );
-      })}
+                          <AccordionDetails>
+                            {schema?.tableColumns?.map((table, tableIndex) => (
+                              <Box key={tableIndex}>
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 2,
+                                    ml: 4,
+                                    my: 0.5,
+                                  }}
+                                >
+                                  <AbcIcon sx={{ color: "#2e86c1", fontSize: 20 }} />
+                                  <Tooltip title={table}>
+                                    <Typography
+                                      draggable
+                                      onDragStart={(e) =>
+                                        e.dataTransfer.setData(
+                                          "text/plain",
+                                          `${db.name}.${schema.name}.${table}`
+                                        )
+                                      }
+                                      onDoubleClick={() =>
+                                        onInsertAtQuery(
+                                          `${db.name}.${schema.name}.${table}`
+                                        )
+                                      }
+                                      sx={{
+                                        cursor: "grab",
+                                        fontFamily: "inherit",
+                                        "&:hover": {
+                                          textDecoration: "underline",
+                                          color: "#0473ea",
+                                        },
+                                        ...ellipsisText,
+                                      }}
+                                    >
+                                      {table}
+                                    </Typography>
+                                  </Tooltip>
+                                </Box>
+                              </Box>
+                            ))}
+                          </AccordionDetails>
+                        </Accordion>
+                      );
+                    })}
+                  </AccordionDetails>
+                </Accordion>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
+
+      {/* Logout Section */}
+      <Box
+        sx={{
+          flexShrink: 0,
+          p: 2,
+          borderTop: "1px solid #e0e0e0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Tooltip title="Logout" placement="right" disableHoverListener={!isCollapsed}>
+          <LogoutIcon
+            sx={{
+              fontFamily: "Ekster Medium",
+              color: "#0473ea",
+              cursor: "pointer",
+              width: "4vh",
+              height: "4vh",
+              fontSize: "2vh",
+              "&:hover": { color: "#035ec2" },
+            }}
+            onClick={handleLogout}
+          />
+        </Tooltip>
+      </Box>
     </Box>
   );
 };
 
-export default DatabaseTree;
+export default CombinedNavbarDatabase;
