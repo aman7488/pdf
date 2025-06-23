@@ -49,6 +49,7 @@ const CombinedNavbarDatabase = ({
   setIsResizing 
 }) => {
   const [openDashboards, setOpenDashboards] = useState(true);
+  const [openDatabases, setOpenDatabases] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedDBs, setExpandedDBs] = useState(new Set());
@@ -397,243 +398,278 @@ const CombinedNavbarDatabase = ({
                 ))}
               </List>
             </Collapse>
-          </List>
-        </Box>
 
-        {/* Database Tree Section */}
-        {!isCollapsed && (
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              mt: 2,
-              mx: 2,
-              mb: 2,
-            }}
-          >
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                backgroundColor: colors.surface,
-                mb: 2,
-              }}
+            {/* Databases Header */}
+            <Tooltip
+              title="Databases"
+              placement="right"
+              disableHoverListener={!isCollapsed}
             >
-              <Typography
-                variant="h6"
+              <ListItem
+                button
+                onClick={() => setOpenDatabases(!openDatabases)}
                 sx={{
-                  fontWeight: "bold",
-                  color: colors.onSurface,
-                  fontFamily: "Ekarta Medium, sans-serif",
-                  mb: 2,
-                  fontSize: "18px",
-                }}
-              >
-                Databases
-              </Typography>
-
-              <TextField
-                fullWidth
-                variant="outlined"
-                size="small"
-                placeholder="Search DB, Schema, Table..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  sx: {
-                    borderRadius: 2,
-                    backgroundColor: colors.background,
-                    fontFamily: "inherit",
-                    "& .MuiOutlinedInput-notchedOutline": {
-                      borderColor: colors.border,
-                    },
-                    "&:hover .MuiOutlinedInput-notchedOutline": {
-                      borderColor: colors.primary,
-                    },
-                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                      borderColor: colors.primary,
+                  position: "relative",
+                  cursor: "pointer",
+                  "&:hover": {
+                    backgroundColor: colors.surfaceVariant,
+                    "&::before": {
+                      content: '""',
+                      position: "absolute",
+                      left: 0,
+                      top: 5,
+                      bottom: 5,
+                      width: "6px",
+                      backgroundColor: colors.primary,
+                      borderTopRightRadius: "8px",
+                      borderBottomRightRadius: "8px",
                     },
                   },
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ color: colors.onSurfaceVariant }} />
-                    </InputAdornment>
-                  ),
                 }}
-              />
-            </Box>
-
-            <Box>
-              {dbStructure?.map((db, dbIndex) => {
-                const isDBExpanded = expandedDBs.has(dbIndex);
-
-                return (
-                  <Accordion
-                    key={dbIndex}
-                    expanded={isDBExpanded}
-                    onChange={() => handleToggleDB(dbIndex)}
-                    sx={{
-                      borderRadius: 2,
-                      backgroundColor: colors.surface,
-                      mb: 1,
-                      "&:before": { display: "none" },
-                      boxShadow: `0 1px 3px ${colors.shadow}`,
-                      "& .MuiAccordionSummary-root": {
-                        "&:hover": {
-                          backgroundColor: colors.surfaceVariant,
-                        },
-                      },
-                      "& .MuiAccordionSummary-expandIconWrapper": {
-                        color: colors.primary,
-                      },
+              >
+                <ListItemIcon>
+                  <StorageIcon sx={{ 
+                    color: colors.secondary, 
+                    width: "3.5vh", 
+                    height: "3.5vh",
+                    minWidth: "24px",
+                    minHeight: "24px",
+                  }} />
+                </ListItemIcon>
+                {!isCollapsed && (
+                  <ListItemText
+                    primary="Databases"
+                    primaryTypographyProps={{
+                      fontFamily: "Ekster Medium",
+                      fontSize: "2.4vh",
+                      minFontSize: "16px",
+                      color: colors.primary,
+                      ml: "1vw",
                     }}
-                  >
-                    <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                        <SchemaIcon sx={{ color: colors.accent }} />
-                        <Typography
-                          draggable
-                          onDragStart={(e) =>
-                            e.dataTransfer.setData("text/plain", db.name)
-                          }
-                          onDoubleClick={() => onInsertAtQuery(db.name)}
-                          sx={{
-                            fontWeight: 500,
-                            cursor: "grab",
-                            fontFamily: "inherit",
-                            color: colors.onSurface,
-                            "&:hover": {
-                              textDecoration: "underline",
-                              color: colors.primary,
-                            },
-                            ...ellipsisText,
-                          }}
-                        >
-                          {db.name}
-                        </Typography>
-                      </Box>
-                    </AccordionSummary>
+                  />
+                )}
+                {!isCollapsed && (
+                  <Box sx={{ color: colors.primary }}>
+                    {openDatabases ? <ExpandLess /> : <ExpandMore />}
+                  </Box>
+                )}
+              </ListItem>
+            </Tooltip>
 
-                    <AccordionDetails>
-                      {db?.schemas?.map((schema, schemaIndex) => {
-                        const schemaKey = getSchemaKey(dbIndex, schemaIndex);
-                        const isSchemaExpanded = expandedSchemas.has(schemaKey);
+            {/* Database Content */}
+            <Collapse in={openDatabases && !isCollapsed} timeout="auto" unmountOnExit>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  backgroundColor: colors.surface,
+                  mb: 2,
+                  mx: 2,
+                }}
+              >
+                <TextField
+                  fullWidth
+                  variant="outlined"
+                  size="small"
+                  placeholder="Search DB, Schema, Table..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  InputProps={{
+                    sx: {
+                      borderRadius: 2,
+                      backgroundColor: colors.background,
+                      fontFamily: "inherit",
+                      "& .MuiOutlinedInput-notchedOutline": {
+                        borderColor: colors.border,
+                      },
+                      "&:hover .MuiOutlinedInput-notchedOutline": {
+                        borderColor: colors.primary,
+                      },
+                      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                        borderColor: colors.primary,
+                      },
+                    },
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ color: colors.onSurfaceVariant }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Box>
 
-                        return (
-                          <Accordion
-                            key={schemaKey}
-                            expanded={isSchemaExpanded}
-                            onChange={() => handleToggleSchema(dbIndex, schemaIndex)}
+              <Box sx={{ mx: 2, mb: 2 }}>
+                {dbStructure?.map((db, dbIndex) => {
+                  const isDBExpanded = expandedDBs.has(dbIndex);
+
+                  return (
+                    <Accordion
+                      key={dbIndex}
+                      expanded={isDBExpanded}
+                      onChange={() => handleToggleDB(dbIndex)}
+                      sx={{
+                        borderRadius: 2,
+                        backgroundColor: colors.surface,
+                        mb: 1,
+                        "&:before": { display: "none" },
+                        boxShadow: `0 1px 3px ${colors.shadow}`,
+                        "& .MuiAccordionSummary-root": {
+                          "&:hover": {
+                            backgroundColor: colors.surfaceVariant,
+                          },
+                        },
+                        "& .MuiAccordionSummary-expandIconWrapper": {
+                          color: colors.primary,
+                        },
+                      }}
+                    >
+                      <AccordionSummary expandIcon={<ExpandMore />}>
+                        <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                          <SchemaIcon sx={{ color: colors.accent }} />
+                          <Typography
+                            draggable
+                            onDragStart={(e) =>
+                              e.dataTransfer.setData("text/plain", db.name)
+                            }
+                            onDoubleClick={() => onInsertAtQuery(db.name)}
                             sx={{
-                              ml: 2,
-                              borderRadius: 2,
-                              backgroundColor: colors.background,
-                              boxShadow: `inset 0 0 0 1px ${colors.border}`,
-                              mb: 1,
-                              "&:before": { display: "none" },
-                              "& .MuiAccordionSummary-root": {
-                                "&:hover": {
-                                  backgroundColor: colors.hover,
-                                },
-                              },
-                              "& .MuiAccordionSummary-expandIconWrapper": {
+                              fontWeight: 500,
+                              cursor: "grab",
+                              fontFamily: "inherit",
+                              color: colors.onSurface,
+                              "&:hover": {
+                                textDecoration: "underline",
                                 color: colors.primary,
                               },
+                              ...ellipsisText,
                             }}
                           >
-                            <AccordionSummary expandIcon={<ExpandMore />}>
-                              <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                                <StorageIcon sx={{ color: colors.success }} />
-                                <Tooltip title={schema.name}>
-                                  <Typography
-                                    draggable
-                                    onDragStart={(e) =>
-                                      e.dataTransfer.setData(
-                                        "text/plain",
-                                        `${db.name}.${schema.name}`
-                                      )
-                                    }
-                                    onDoubleClick={() =>
-                                      onInsertAtQuery(`${db.name}.${schema.name}`)
-                                    }
-                                    sx={{
-                                      cursor: "grab",
-                                      fontFamily: "inherit",
-                                      color: colors.onSurface,
-                                      "&:hover": {
-                                        textDecoration: "underline",
-                                        color: colors.primary,
-                                      },
-                                      ...ellipsisText,
-                                    }}
-                                  >
-                                    {schema.name}
-                                  </Typography>
-                                </Tooltip>
-                              </Box>
-                            </AccordionSummary>
+                            {db.name}
+                          </Typography>
+                        </Box>
+                      </AccordionSummary>
 
-                            <AccordionDetails>
-                              {schema?.tableColumns?.map((table, tableIndex) => (
-                                <Box key={tableIndex}>
-                                  <Box
-                                    sx={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 2,
-                                      ml: 4,
-                                      my: 0.5,
-                                      py: 0.5,
-                                      px: 1,
-                                      borderRadius: 1,
-                                      "&:hover": {
-                                        backgroundColor: colors.hover,
-                                      },
-                                    }}
-                                  >
-                                    <AbcIcon sx={{ color: colors.info, fontSize: 20 }} />
-                                    <Tooltip title={table}>
-                                      <Typography
-                                        draggable
-                                        onDragStart={(e) =>
-                                          e.dataTransfer.setData(
-                                            "text/plain",
-                                            `${db.name}.${schema.name}.${table}`
-                                          )
-                                        }
-                                        onDoubleClick={() =>
-                                          onInsertAtQuery(
-                                            `${db.name}.${schema.name}.${table}`
-                                          )
-                                        }
-                                        sx={{
-                                          cursor: "grab",
-                                          fontFamily: "inherit",
-                                          color: colors.onSurface,
-                                          "&:hover": {
-                                            textDecoration: "underline",
-                                            color: colors.primary,
-                                          },
-                                          ...ellipsisText,
-                                        }}
-                                      >
-                                        {table}
-                                      </Typography>
-                                    </Tooltip>
-                                  </Box>
+                      <AccordionDetails>
+                        {db?.schemas?.map((schema, schemaIndex) => {
+                          const schemaKey = getSchemaKey(dbIndex, schemaIndex);
+                          const isSchemaExpanded = expandedSchemas.has(schemaKey);
+
+                          return (
+                            <Accordion
+                              key={schemaKey}
+                              expanded={isSchemaExpanded}
+                              onChange={() => handleToggleSchema(dbIndex, schemaIndex)}
+                              sx={{
+                                ml: 2,
+                                borderRadius: 2,
+                                backgroundColor: colors.background,
+                                boxShadow: `inset 0 0 0 1px ${colors.border}`,
+                                mb: 1,
+                                "&:before": { display: "none" },
+                                "& .MuiAccordionSummary-root": {
+                                  "&:hover": {
+                                    backgroundColor: colors.hover,
+                                  },
+                                },
+                                "& .MuiAccordionSummary-expandIconWrapper": {
+                                  color: colors.primary,
+                                },
+                              }}
+                            >
+                              <AccordionSummary expandIcon={<ExpandMore />}>
+                                <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                                  <StorageIcon sx={{ color: colors.success }} />
+                                  <Tooltip title={schema.name}>
+                                    <Typography
+                                      draggable
+                                      onDragStart={(e) =>
+                                        e.dataTransfer.setData(
+                                          "text/plain",
+                                          `${db.name}.${schema.name}`
+                                        )
+                                      }
+                                      onDoubleClick={() =>
+                                        onInsertAtQuery(`${db.name}.${schema.name}`)
+                                      }
+                                      sx={{
+                                        cursor: "grab",
+                                        fontFamily: "inherit",
+                                        color: colors.onSurface,
+                                        "&:hover": {
+                                          textDecoration: "underline",
+                                          color: colors.primary,
+                                        },
+                                        ...ellipsisText,
+                                      }}
+                                    >
+                                      {schema.name}
+                                    </Typography>
+                                  </Tooltip>
                                 </Box>
-                              ))}
-                            </AccordionDetails>
-                          </Accordion>
-                        );
-                      })}
-                    </AccordionDetails>
-                  </Accordion>
-                );
-              })}
-            </Box>
-          </Box>
-        )}
+                              </AccordionSummary>
+
+                              <AccordionDetails>
+                                {schema?.tableColumns?.map((table, tableIndex) => (
+                                  <Box key={tableIndex}>
+                                    <Box
+                                      sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 2,
+                                        ml: 4,
+                                        my: 0.5,
+                                        py: 0.5,
+                                        px: 1,
+                                        borderRadius: 1,
+                                        "&:hover": {
+                                          backgroundColor: colors.hover,
+                                        },
+                                      }}
+                                    >
+                                      <AbcIcon sx={{ color: colors.info, fontSize: 20 }} />
+                                      <Tooltip title={table}>
+                                        <Typography
+                                          draggable
+                                          onDragStart={(e) =>
+                                            e.dataTransfer.setData(
+                                              "text/plain",
+                                              `${db.name}.${schema.name}.${table}`
+                                            )
+                                          }
+                                          onDoubleClick={() =>
+                                            onInsertAtQuery(
+                                              `${db.name}.${schema.name}.${table}`
+                                            )
+                                          }
+                                          sx={{
+                                            cursor: "grab",
+                                            fontFamily: "inherit",
+                                            color: colors.onSurface,
+                                            "&:hover": {
+                                              textDecoration: "underline",
+                                              color: colors.primary,
+                                            },
+                                            ...ellipsisText,
+                                          }}
+                                        >
+                                          {table}
+                                        </Typography>
+                                      </Tooltip>
+                                    </Box>
+                                  </Box>
+                                ))}
+                              </AccordionDetails>
+                            </Accordion>
+                          );
+                        })}
+                      </AccordionDetails>
+                    </Accordion>
+                  );
+                })}
+              </Box>
+            </Collapse>
+          </List>
+        </Box>
 
         {/* Logout Section */}
         <Box
