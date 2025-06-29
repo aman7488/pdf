@@ -1,788 +1,190 @@
-import React, { useState } from "react";
-import {
-  Box,
-  Typography,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Collapse,
-  IconButton,
-  Tooltip,
-} from "@mui/material";
-import DataExplorationIcon from "@mui/icons-material/DataExploration";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import ExpandLess from "@mui/icons-material/ExpandLess";
-import ExpandMore from "@mui/icons-material/ExpandMore";
-import BarChartIcon from "@mui/icons-material/BarChart";
-import PieChartIcon from "@mui/icons-material/PieChart";
-import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../pages/Login/AuthContext";
-import LogoutIcon from "@mui/icons-material/Logout";
+package com.example.kerberosHive;
 
-const allBoxes = [
-  { title: "Self Service", image: "/selfService.png", route: "/self-service" },
-  { title: "FMO Trade Volume", image: "/db1.png", route: "/dashboard" },
-  { title: "Settlement", image: "/db2.jpg", route: "/dashboard" },
-  { title: "Margin Operations", image: "/db3.png", route: "/dashboard" },
-  { title: "Middle Office", image: "/db1.png", route: "/dashboard" },
-  { title: "Confirmation", image: "/db2.jpg", route: "/dashboard" },
-  { title: "Reg Ops Volumetric", image: "/db3.png", route: "/dashboard" },
-  { title: "GEMS", image: "/selfService.png", route: "/dashboard" },
-];
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.sql.*;
+import java.util.Properties;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.security.UserGroupInformation;
 
-const Navbar = ({ 
-  sidebarWidth = "43.5%", 
-  setSidebarWidth, 
-  isResizing, 
-  setIsResizing,
-  showResizeHandle = false // New prop to control resize handle visibility
-}) => {
-  const [openDashboards, setOpenDashboards] = useState(true);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const navigate = useNavigate();
+public class HiveKerberosConnection {
+    private static final String JDBC_URL = "jdbc:hive2://uklvadhdp006a.pi.dev.net:12181,uklvadhdp007a.pi.dev.net:12181,uklvadhdp008a.pi.dev.net:12181/default;password=hive;principal=hive/_HOST@ZONE1.SCBDEV.NET;serviceDiscoveryMode=zooKeeper;ssl=true;" +
+            "sslTrustStore=C:/Users/2010170/Rotation%202/SharePoint%20POC/cm-auto-global_truststore.jks;user=hive;zooKeeperNamespace=hiveserver2";
+    private static final String KEYTAB_PATH = "C:/Users/2010170/Rotation 2/SharePoint POC/g.fmoappdev.001.keytab";
+    private static final String PRINCIPAL = "g.fmoappdev.001@ZONE1.SCBDEV.NET";
+    private static final String HIVE_DRIVER = "org.apache.hive.jdbc.HiveDriver";
+    private Connection connection;
 
-  const handleDashboardClick = () => setOpenDashboards(!openDashboards);
-  const dashboardItems = allBoxes.filter(
-    (item) => item.title !== "Self Service"
-  );
-  const userId = sessionStorage.getItem("user_id");
-  const { logout } = useAuth();
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      console.log(error.message);
+    public HiveKerberosConnection() {
+        setupKerberos();
     }
-  };
 
-  // Convert percentage width to pixels for resizing logic
-  const getWidthInPixels = () => {
-    if (typeof sidebarWidth === 'string' && sidebarWidth.includes('%')) {
-      const percentage = parseFloat(sidebarWidth.replace('%', ''));
-      return (window.innerWidth * percentage) / 100;
+    private void setupKerberos() {
+        try {
+            System.setProperty("java.security.krb5.conf", "C:/Users/2010170/Rotation 2/SharePoint POC/krb5.conf");
+            Configuration conf = new Configuration();
+            conf.set("hadoop.security.authentication", "kerberos");
+            conf.set("hadoop.security.authorization", "true");
+            UserGroupInformation.setConfiguration(conf);
+            UserGroupInformation.loginUserFromKeytab(PRINCIPAL, KEYTAB_PATH);
+            System.out.println("Kerberos authentication successful for: " + PRINCIPAL);
+        } catch (Exception e) {
+            System.err.println("Kerberos authentication failed: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to authenticate with Kerberos", e);
+        }
     }
-    return parseFloat(sidebarWidth);
-  };
 
-  const getWidthStyle = () => {
-    if (isCollapsed) return "80px";
-    return showResizeHandle ? `${getWidthInPixels()}px` : sidebarWidth;
-  };
+    /**
+     * Establish connection to Hive
+     */
+    public void connect() {
+        try {
+            Class.forName(HIVE_DRIVER);
+            Properties props = new Properties();
+            connection = DriverManager.getConnection(JDBC_URL, props);
+            System.out.println("Connected to Hive successfully!");
+        } catch (ClassNotFoundException e) {
+            System.err.println("Hive JDBC driver not found: " + e.getMessage());
+            throw new RuntimeException("Hive driver not found", e);
+        } catch (SQLException e) {
+            System.err.println("Failed to connect to Hive: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to connect to Hive", e);
+        }
+    }
 
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        width: getWidthStyle(),
-        transition: isResizing ? "none" : "width 0.3s",
-        height: "100vh",
-        boxShadow: 10,
-        bgcolor: "#ffffff",
-        overflowY: "auto",
-        position: "relative",
-        scrollbarWidth: "none",
-        "&::-webkit-scrollbar": {
-          display: "none",
-        },
-      }}
-    >
-      <IconButton
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        sx={{
-          position: "fixed",
-          top: 20,
-          left: isCollapsed ? 80 : showResizeHandle ? `${getWidthInPixels() * 0.45}px` : "18%",
-          transform: "translateX(-50%)",
-          bgcolor: "#ffffff",
-          border: "1px solid #ccc",
-          zIndex: 2000,
-          borderRadius: "50%",
-          boxShadow: 2,
-          transition: isResizing ? "none" : "left 0.3s",
-          width: "4vh",
-          height: "4vh",
-          "&:hover": {
-            backgroundColor: "#ffffff",
-          },
-        }}
-      >
-        {isCollapsed ? <ChevronRightIcon /> : <KeyboardArrowLeftIcon />}
-      </IconButton>
-
-      <Box
-        sx={{
-          width: "100%",
-          height: "6vh",
-          margin: "5vh 0px 3vh 0",
-          display: "flex",
-          justifyContent: "center",
-        }}
-      >
-        <img
-          src="/STANC-logo.png"
-          width={isCollapsed ? "50%" : "10%"}
-          alt="logo"
-        />
-      </Box>
-
-      {!isCollapsed && (
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            height: "7vh",
-            width: "100%",
-            bgcolor: "#0473ea",
-            px: 2,
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1,
-              flexDirection: isCollapsed ? "column" : "row",
-            }}
-          >
-            <Box
-              component="img"
-              src="avatar.png"
-              alt="User Avatar"
-              sx={{
-                width: "4vh",
-                height: "4vh",
-                borderRadius: "50%",
-                objectFit: "cover",
-                border: "2px solid #e0e0e0",
-              }}
-            />
-            {!isCollapsed && (
-              <Typography
-                variant="h6"
-                sx={{
-                  fontFamily: "Ekster Medium",
-                  color: "#ffffff",
-                  fontSize: "2vh",
-                  ml: 5,
-                }}
-              >
-                Welcome <span style={{ color: "#38d200" }}>{userId}</span>
-              </Typography>
-            )}
-          </Box>
-        </Box>
-      )}
-
-      <List component="nav" sx={{ mt: 2 }}>
-        <Tooltip
-          title="Self Service"
-          placement="right"
-          disableHoverListener={!isCollapsed}
-        >
-          <ListItem
-            button
-            onClick={() => navigate("/self-service")}
-            sx={{
-              position: "relative",
-              cursor: "pointer",
-              "&:hover": {
-                backgroundColor: "#eaf3fc",
-                "&::before": {
-                  content: '""',
-                  position: "absolute",
-                  left: 0,
-                  top: 5,
-                  bottom: 5,
-                  width: "6px",
-                  backgroundColor: "#0473ea",
-                  borderTopRightRadius: "8px",
-                  borderBottomRightRadius: "8px",
-                },
-              },
-            }}
-          >
-            <ListItemIcon>
-              <DataExplorationIcon
-                sx={{ color: "#38d200", width: "3.5vh", height: "3.5vh" }}
-              />
-            </ListItemIcon>
-            {!isCollapsed && (
-              <ListItemText
-                primary="Self Service"
-                primaryTypographyProps={{
-                  fontFamily: "Ekster Medium",
-                  fontSize: "2.4vh",
-                  color: "#0473ea",
-                  ml: "1vw",
-                  mt: "1.5vh",
-                }}
-              />
-            )}
-          </ListItem>
-        </Tooltip>
-
-        <Tooltip
-          title="Dashboards"
-          placement="right"
-          disableHoverListener={!isCollapsed}
-        >
-          <ListItem
-            button
-            onClick={handleDashboardClick}
-            sx={{
-              position: "relative",
-              cursor: "pointer",
-              "&:hover": {
-                backgroundColor: "#eaf3fc",
-                "&::before": {
-                  content: '""',
-                  position: "absolute",
-                  left: 0,
-                  top: 5,
-                  bottom: 5,
-                  width: "6px",
-                  backgroundColor: "#0473ea",
-                  borderTopRightRadius: "8px",
-                  borderBottomRightRadius: "8px",
-                },
-              },
-            }}
-          >
-            <ListItemIcon>
-              <DashboardIcon
-                sx={{ color: "#38d200", width: "3.5vh", height: "3.5vh" }}
-              />
-            </ListItemIcon>
-            {!isCollapsed && (
-              <ListItemText
-                primary="Dashboards"
-                primaryTypographyProps={{
-                  fontFamily: "Ekster Medium",
-                  fontSize: "2.4vh",
-                  color: "#0473ea",
-                  ml: "1vw",
-                  mt: "1.5vh",
-                }}
-              />
-            )}
-            {!isCollapsed && (openDashboards ? <ExpandLess /> : <ExpandMore />)}
-          </ListItem>
-        </Tooltip>
-
-        <Collapse
-          in={openDashboards && !isCollapsed}
-          timeout="auto"
-          unmountOnExit
-        >
-          <List component="div" disablePadding sx={{ pl: 4 }}>
-            {dashboardItems.map((item, index) => (
-              <ListItem
-                button
-                key={index}
-                onClick={() =>
-                  navigate(item.route, { state: { title: item.title } })
+    /**
+     * Execute SELECT queries that return data
+     */
+    public void executeQuery(String sql) {
+        if (connection == null) {
+            throw new IllegalStateException("Not connected to Hive. Call connect() first.");
+        }
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            ResultSetMetaData metaData = rs.getMetaData();
+            int columnCount = metaData.getColumnCount();
+            for (int i = 1; i <= columnCount; i++) {
+                System.out.print(metaData.getColumnName(i));
+                if (i < columnCount) System.out.print("\t");
+            }
+            System.out.println();
+            for (int i = 1; i <= columnCount; i++) {
+                System.out.print("----------");
+                if (i < columnCount) System.out.print("\t");
+            }
+            System.out.println();
+            while (rs.next()) {
+                for (int i = 1; i <= columnCount; i++) {
+                    System.out.print(rs.getString(i));
+                    if (i < columnCount) System.out.print("\t");
                 }
-                sx={{
-                  position: "relative",
-                  cursor: "pointer",
-                  "&:hover": {
-                    backgroundColor: "#eaf3fc",
-                    "&::before": {
-                      content: '""',
-                      position: "absolute",
-                      left: 0,
-                      top: 5,
-                      bottom: 5,
-                      width: "6px",
-                      backgroundColor: "#0473ea",
-                      borderTopRightRadius: "8px",
-                      borderBottomRightRadius: "8px",
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon>
-                  {index % 2 === 0 ? (
-                    <BarChartIcon sx={{ color: "#0473ea" }} />
-                  ) : (
-                    <PieChartIcon sx={{ color: "#0473ea" }} />
-                  )}
-                </ListItemIcon>
-                <ListItemText
-                  primary={item.title}
-                  primaryTypographyProps={{
-                    fontFamily: "Ekster Medium",
-                    fontSize: "2vh",
-                    color: "#6d6e70",
-                  }}
-                />
-              </ListItem>
-            ))}
-          </List>
-        </Collapse>
-      </List>
-      <Box
-        sx={{
-          mt: "auto",
-          p: 2,
-          borderTop: "1px solid #e0e0e0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexDirection: isCollapsed ? "column" : "row",
-          gap: 1,
-        }}
-      >
-        <LogoutIcon
-          sx={{
-            fontFamily: "Ekster Medium",
-            color: "#0473ea",
-            cursor: "pointer",
-            width: "4vh",
-            height: "4vh",
-            fontSize: "2vh",
-            textAlign: "center",
-            "&:hover": { textDecoration: "underline" },
-          }}
-          onClick={handleLogout}
-        />
-      </Box>
-    </Box>
-  );
-};
-
-export default Navbar;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import React, { useState, useEffect } from "react";
-import {
-  Box,
-  Typography,
-  Grid,
-  CircularProgress,
-  Modal,
-  Paper,
-  Button,
-  SvgIcon,
-  Divider,
-} from "@mui/material";
-import DragHandleIcon from "@mui/icons-material/DragHandle";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../Login/AuthContext";
-import DashboardTile from "../../components/DashboardTile";
-import Navbar from "../../components/Navbar";
-import AppContainer from "../../app-container/AppContainer";
-import BorderedSection from "../../components/BorderedSection";
-
-const allBoxes = [
-  {
-    title: "Self Service",
-    image: "/selfService.png",
-    desc: "Live",
-    date: "May 2025",
-    route: "/self-service",
-  },
-  {
-    title: "FMO Trade Volume",
-    image: "/db1.png",
-    desc: "Live",
-    date: "May 2025",
-    route: "/dashboard",
-  },
-  {
-    title: "Settlement",
-    image: "/db2.jpg",
-    desc: "Live",
-    date: "June 2025",
-    route: "/dashboard",
-  },
-  {
-    title: "Margin Operations",
-    image: "/db3.png",
-    desc: "Live",
-    date: "June 2025",
-    route: "/dashboard",
-  },
-  {
-    title: "Middle Office",
-    image: "/db1.png",
-    desc: "Live",
-    date: "June 2025",
-    route: "/dashboard",
-  },
-  {
-    title: "Confirmation",
-    image: "/db2.jpg",
-    desc: "Live",
-    date: "June 2025",
-    route: "/dashboard",
-  },
-  {
-    title: "Reg Ops Volumetric",
-    image: "/db3.png",
-    desc: "Live",
-    date: "June 2025",
-    route: "/dashboard",
-  },
-  {
-    title: "GEMS",
-    image: "/selfService.png",
-    desc: "Live",
-    date: "June 2025",
-    route: "/dashboard",
-  },
-];
-
-const Dashboard = () => {
-  const navigate = useNavigate();
-  const { allowedSubjects, isAuthLoading } = useAuth();
-
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedTile, setSelectedTile] = useState(null);
-  
-  // Resizable navbar state
-  const [sidebarWidth, setSidebarWidth] = useState(350); // Start with pixels instead of percentage
-  const [isResizing, setIsResizing] = useState(false);
-
-  // Handle mouse resize functionality
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isResizing) return;
-      const newWidth = Math.min(Math.max(e.clientX, 200), 600); // width clamp: 200-600px
-      setSidebarWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isResizing]);
-
-  const visibleBoxes = allBoxes.filter(
-    (box) => box.title === "Self Service" || allowedSubjects.includes(box.title)
-  );
-
-  const handleTileClick = (box) => {
-    if (box.title === "Self Service") {
-      navigate(box.route);
-    } else {
-      setSelectedTile(box);
-      setModalOpen(true);
+                System.out.println();
+            }
+        } catch (SQLException e) {
+            System.err.println("Error executing query: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
-  };
 
-  const handleNavigate = () => {
-    setModalOpen(false);
-    navigate(selectedTile.route);
-  };
+    /**
+     * Execute INSERT, UPDATE, DELETE statements
+     * Returns the number of rows affected
+     */
+    public int executeUpdate(String sql) {
+        if (connection == null) {
+            throw new IllegalStateException("Not connected to Hive. Call connect() first.");
+        }
 
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "row",
-        height: "100vh",
-        backgroundColor: "#cacfd2",
-        overflow: "hidden",
-      }}
-    >
-      <Navbar 
-        sidebarWidth={sidebarWidth}
-        setSidebarWidth={setSidebarWidth}
-        isResizing={isResizing}
-        setIsResizing={setIsResizing}
-        showResizeHandle={true}
-      />
-      
-      {/* Resize Handle */}
-      <Box
-        onMouseDown={() => setIsResizing(true)}
-        sx={{
-          width: "10px",
-          cursor: "col-resize",
-          backgroundColor: "#e0e0e0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          "&:hover": { backgroundColor: "#c0c0c0" },
-        }}
-        title="Drag to resize"
-      >
-        <DragHandleIcon
-          sx={{
-            fontSize: "1.2rem",
-            color: "#888",
-            transform: "rotate(90deg)",
-            pointerEvents: "none",
-          }}
-        />
-      </Box>
+        try (Statement stmt = connection.createStatement()) {
+            System.out.println("Executing UPDATE/INSERT statement...");
+            System.out.println("SQL: " + sql.substring(0, Math.min(100, sql.length())) + "...");
 
-      <Box
-        sx={{
-          flexGrow: 1,
-          overflowY: "auto",
-          padding: "40px 0 40px 40px",
-          backgroundColor: "#ffffff",
-        }}
-      >
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "flex-end",
-            mb: 4,
-          }}
-        >
-          <Paper
-            elevation={3}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              backgroundColor: "#ffffff",
-              width: "40vw",
-              borderTopLeftRadius: 10,
-              borderBottomLeftRadius: 10,
-            }}
-          >
-            <Box
-              sx={{
-                width: 16,
-                height: 100,
-                borderTopLeftRadius: 10,
-                borderBottomLeftRadius: 10,
-                background:
-                  "linear-gradient(to bottom, #0072c6 67%, #59ba47 50%)",
-              }}
-            />
+            long startTime = System.currentTimeMillis();
+            int rowsAffected = stmt.executeUpdate(sql);
+            long endTime = System.currentTimeMillis();
 
-            <Box
-              sx={{
-                width: "40vw",
-                height: "100%",
-                background:
-                  "linear-gradient(to bottom, #a9cce3 67%, #a9dfbf 50%)",
-              }}
-            >
-              <Typography
-                variant="h4"
-                sx={{
-                  fontWeight: 600,
-                  fontFamily: "Ekster Medium",
-                  color: "#111111",
-                  ml: 3,
-                  mt: 2,
-                  mb: 1
-                }}
-              >
-                Markets MIS Data Analytics
-              </Typography>
-              <Divider/>
-              <Typography
-                variant="subtitle1"
-                sx={{
-                  fontWeight: 400,
-                  fontFamily: "Ekster Medium",
-                  color: "#444444",
-                  ml: 3,
-                }}
-              >
-                Transforming Operations with Unified Insights
-              </Typography>
-            </Box>
-          </Paper>
-        </Box>
+            System.out.println("Statement executed successfully!");
+            System.out.println("Rows affected: " + rowsAffected);
+            System.out.println("Execution time: " + (endTime - startTime) + " ms");
 
-        {isAuthLoading ? (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              height: "50vh",
-            }}
-          >
-            <CircularProgress />
-          </Box>
-        ) : (
-          <>
-            {visibleBoxes.some((box) => box.title === "Self Service") && (
-              <BorderedSection title="Self Service">
-                <Paper
-                  elevation={2}
-                  sx={{
-                    display: "flex",
-                    padding: 2,
-                    boxShadow: 10,
-                    borderRadius: 5,
-                    marginBottom: 4,
-                    alignItems: "center",
-                  }}
-                >
-                  <Box sx={{ flex: "0 0 auto", marginRight: 3 }}>
-                    <DashboardTile
-                      title="Self Service"
-                      image="/selfService.png"
-                      desc="Live"
-                      date="May 2025"
-                      onClick={() =>
-                        handleTileClick(
-                          visibleBoxes.find((b) => b.title === "Self Service")
-                        )
-                      }
-                    />
-                  </Box>
-                  <Box sx={{ flex: 1, justifyContent: "flex-start", ml: 5 }}>
-                    <Typography
-                      variant="h4"
-                      fontWeight="600"
-                      sx={{ fontFamily: "Ekster Medium", color: "#0473ea" }}
-                      gutterBottom
-                    >
-                      Self Service
-                    </Typography>
-                    <Typography
-                      variant="body1"
-                      sx={{ fontFamily: "Ekster Medium" }}
-                    >
-                      Self Service is tool to fetch data from DQSL and visualise
-                      them in Highcharts. You can customise the chart. There are
-                      aggregation functions. Currently present: Count, Sum,
-                      Average, Maximum, Minimum. Self Service is tool to fetch
-                      data from DQSL and visualise them in Highcharts. You can
-                      customise the chart. There are aggregation functions.
-                      Currently present: Count, Sum, Average, Maximum, Minimum.
-                    </Typography>
-                  </Box>
-                </Paper>
-              </BorderedSection>
-            )}
+            return rowsAffected;
 
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "flex-start",
-                boxShadow: 10,
-                borderRadius: 5,
-                padding: 10,
-                width: "87%",
-                ml: 2,
-              }}
-            >
-              <Typography
-                variant="h4"
-                fontWeight="bold"
-                sx={{ mb: 4, fontFamily: "Ekster Medium", color: "#0473ea" }}
-              >
-                Dashboards
-              </Typography>
-              <Grid container spacing={4}>
-                {visibleBoxes
-                  .filter((box) => box.title !== "Self Service")
-                  .map((box, index) => (
-                    <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
-                      <DashboardTile
-                        title={box.title}
-                        image={box.image}
-                        desc={box.desc}
-                        date={box.date}
-                        onClick={() => handleTileClick(box)}
-                      />
-                    </Grid>
-                  ))}
-              </Grid>
-            </Box>
-          </>
-        )}
-      </Box>
+        } catch (SQLException e) {
+            System.err.println("Error executing update statement: " + e.getMessage());
+            e.printStackTrace();
+            return -1;
+        }
+    }
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)}>
-        <Box
-          sx={{
-            width: "90vw",
-            maxHeight: "90vh",
-            bgcolor: "#ffffff",
-            borderRadius: 3,
-            p: 3,
-            mx: "auto",
-            mt: "5vh",
-            boxShadow: 24,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
-        >
-          <Typography variant="h6" mb={2} fontWeight="bold">
-            {selectedTile?.title} - Preview
-          </Typography>
+    /**
+     * Execute DDL statements (CREATE, ALTER, DROP, etc.)
+     * Returns true if execution was successful
+     */
+    public boolean executeDDL(String sql) {
+        if (connection == null) {
+            throw new IllegalStateException("Not connected to Hive. Call connect() first.");
+        }
 
-          <Box
-            sx={{
-              flexGrow: 1,
-              overflowY: "auto",
-              border: "1px solid #ccc",
-              borderRadius: 2,
-              p: 2,
-              mb: 3,
-              backgroundColor: "#ffffff",
-              height: "65vh",
-            }}
-          >
-            <AppContainer isPreview />
-          </Box>
+        try (Statement stmt = connection.createStatement()) {
+            System.out.println("Executing DDL statement...");
+            System.out.println("SQL: " + sql.substring(0, Math.min(100, sql.length())) + "...");
 
-          <Box display="flex" justifyContent="flex-end" gap={2}>
-            <Button
-              variant="outlined"
-              sx={{
-                bgcolor: "#38d200",
-                color: "#ffffff",
-                fontFamily: "Ekster Medium",
-              }}
-              onClick={() => setModalOpen(false)}
-            >
-              Close
-            </Button>
-            <Button
-              variant="contained"
-              sx={{ bgcolor: "#0473ea", fontFamily: "Ekster Medium" }}
-              onClick={handleNavigate}
-            >
-              Open in full page
-            </Button>
-          </Box>
-        </Box>
-      </Modal>
-    </Box>
-  );
-};
+            long startTime = System.currentTimeMillis();
+            boolean result = stmt.execute(sql);
+            long endTime = System.currentTimeMillis();
 
-export default Dashboard;
+            System.out.println("DDL statement executed successfully!");
+            System.out.println("Execution time: " + (endTime - startTime) + " ms");
+
+            return true;
+
+        } catch (SQLException e) {
+            System.err.println("Error executing DDL statement: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public void close() {
+        if (connection != null) {
+            try {
+                connection.close();
+                System.out.println("Connection closed.");
+            } catch (SQLException e) {
+                System.err.println("Error closing connection: " + e.getMessage());
+            }
+        }
+    }
+
+
+    public static void main(String[] args) {
+        HiveKerberosConnection hiveConn = new HiveKerberosConnection();
+
+        try {
+            hiveConn.connect();
+
+            System.out.println("\n=== SELECT Query ===");
+            hiveConn.executeQuery("SELECT * FROM fmmis_sri_open.razor_dvp_nastro_fx_view_v2 LIMIT 3");
+
+            System.out.println("\n=== INSERT OVERWRITE Statement ===");
+            String insertSQL = "INSERT OVERWRITE TABLE fmmis_sri_open.Razor_ztp_mm_final PARTITION(fmmis_part_date='20230101') " +
+                    "select category,cnt_origin,trn_no,cnt_version,trn_date,start_date,next_pay_date,mature_date,notional_amount,typology,entity,counterparty,cpty_lname,stlmethod,ctp_type,ctp_fmid,conf_medium,actionowner,actiongroup,actionplace,actionname,actiondate,actionreason,mainstatus,substatus,conf_comment,sett_comment,sett_freetext,dlv_flow_id,dlv_send_receive,lienamount,gle_grp_id,p100,sci_counterparty_type,'','','' from fmmis_landing.Razor_ztp_mm_final_history_confirm where fmmis_part_date=20240101 limit 1";
+            hiveConn.executeUpdate(insertSQL);
+
+            System.out.println("\n=== ALTER TABLE Statement ===");
+            String alterSQL = "ALTER table fmmis_storage.PCT2_PORTFOLIOPROFILE add  IF NOT EXISTS partition(fmmis_part_date='20250616') Location '/apps/fmoapp/hdata/fmmis_storage/pct2/all/avro/pct2_portfolioprofile/fmmis_part_date=20250616'";
+            hiveConn.executeDDL(alterSQL);
+
+        } catch (Exception e) {
+            System.err.println("Application error: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            hiveConn.close();
+        }
+    }
+
+}
